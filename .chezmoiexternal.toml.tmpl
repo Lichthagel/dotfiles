@@ -1,3 +1,5 @@
+{{- if .mpv}}
+
 {{- if eq .chezmoi.os "windows" }}
 ["AppData/Roaming/mpv/shaders"]
 {{- else }}
@@ -68,3 +70,5 @@ url = "https://github.com/cniw/mpv-discordRPC/archive/refs/heads/master.zip"
 refreshPeriod = "168h"
 stripComponents = 2
 include = ["mpv-discordRPC-master/mpv-discordRPC/**"]
+
+{{- end}}

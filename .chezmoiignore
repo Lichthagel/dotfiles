@@ -8,3 +8,7 @@ README.md
 {{ if ne .chezmoi.os "windows" }}
 AppData/
 {{ end }}
+{{ if not .mpv }}
+.config/mpv/
+AppData/Roaming/mpv/
+{{ end }}

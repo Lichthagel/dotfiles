@@ -1,0 +1,21 @@
+# zsh-users/zsh-syntax-highlighting
+zsh-users/zsh-autosuggestions
+zsh-users/zsh-history-substring-search
+zsh-users/zsh-completions
+
+# MichaelAquilina/zsh-auto-notify
+MichaelAquilina/zsh-you-should-use
+zdharma-continuum/fast-syntax-highlighting
+chrissicool/zsh-256color
+# yuhonas/zsh-ansimotd
+belak/zsh-utils path:editor
+
+ohmyzsh/ohmyzsh path:plugins/git-commit
+ohmyzsh/ohmyzsh path:plugins/gitfast
+ohmyzsh/ohmyzsh path:plugins/npm
+ohmyzsh/ohmyzsh path:plugins/nvm
+ohmyzsh/ohmyzsh path:plugins/pip
+ohmyzsh/ohmyzsh path:plugins/pipenv
+ohmyzsh/ohmyzsh path:plugins/podman
+ohmyzsh/ohmyzsh path:plugins/pylint
+# ohmyzsh/ohmyzsh path:plugins/ssh-agent

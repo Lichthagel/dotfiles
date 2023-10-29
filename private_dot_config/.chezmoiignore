@@ -1,4 +1,0 @@
-{{ if ne .chezmoi.os "linux" }}
-*
-{{ end }}
-!starship.toml

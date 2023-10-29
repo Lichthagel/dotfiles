@@ -7,3 +7,64 @@ type = "archive"
 url = "https://github.com/bloc97/Anime4K/releases/download/v4.0.1/Anime4K_v4.0.zip"
 refreshPeriod = "168h"
 checksum.sha256 = "139cd282086457c5adc79caf7b75b8b825091d71c9b54958c18745fea62d7ed7"
+
+# TODO add macro/template/whatever
+
+{{- if eq .chezmoi.os "windows" }}
+["AppData/Roaming/mpv/scripts/thumbfast.lua"]
+{{- else }}
+[".config/mpv/scripts/thumbfast.lua"]
+{{- end }}
+type = "file"
+url = "https://raw.githubusercontent.com/po5/thumbfast/master/thumbfast.lua"
+refreshPeriod = "168h"
+
+{{- if eq .chezmoi.os "windows" }}
+["AppData/Roaming/mpv/scripts/status-line.lua"]
+{{- else }}
+[".config/mpv/scripts/status-line.lua"]
+{{- end }}
+type = "file"
+url = "https://raw.githubusercontent.com/mpv-player/mpv/master/TOOLS/lua/status-line.lua"
+refreshPeriod = "168h"
+
+
+# TODO i likely did some modifications to a previous version of this script
+{{- if eq .chezmoi.os "windows" }}
+["AppData/Roaming/mpv/scripts/dynamic-crop.lua"]
+{{- else }}
+[".config/mpv/scripts/dynamic-crop.lua"]
+{{- end }}
+type = "file"
+url = "https://raw.githubusercontent.com/Ashyni/mpv-scripts/master/dynamic-crop.lua"
+refreshPeriod = "168h"
+
+{{- if eq .chezmoi.os "windows" }}
+["AppData/Roaming/mpv/scripts/copyTime.lua"]
+{{- else }}
+[".config/mpv/scripts/copyTime.lua"]
+{{- end }}
+type = "file"
+url = "https://raw.githubusercontent.com/Arieleg/mpv-copyTime/master/copyTime.lua"
+refreshPeriod = "168h"
+
+{{- if eq .chezmoi.os "windows" }}
+["AppData/Roaming/mpv"]
+{{- else }}
+[".config/mpv"]
+{{- end }}
+type = "archive"
+url = "https://github.com/tomasklaen/uosc/releases/download/5.0.0/uosc.zip"
+refreshPeriod = "168h"
+checksum.sha256 = "d7109a351d9d5c671523a5e2479bce9c79fbf08e18a0aa09e553557770bdaf5d"
+
+{{- if eq .chezmoi.os "windows" }}
+["AppData/Roaming/mpv/scripts/mpv-discordRPC"]
+{{- else }}
+[".config/mpv/scripts/mpv-discordRPC"]
+{{- end }}
+type = "archive"
+url = "https://github.com/cniw/mpv-discordRPC/archive/refs/heads/master.zip"
+refreshPeriod = "168h"
+stripComponents = 2
+include = ["mpv-discordRPC-master/mpv-discordRPC/**"]

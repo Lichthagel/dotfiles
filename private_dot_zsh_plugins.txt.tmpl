@@ -18,4 +18,6 @@ ohmyzsh/ohmyzsh path:plugins/pip
 ohmyzsh/ohmyzsh path:plugins/pipenv
 ohmyzsh/ohmyzsh path:plugins/podman
 ohmyzsh/ohmyzsh path:plugins/pylint
-# ohmyzsh/ohmyzsh path:plugins/ssh-agent
+{{- if .sshagent }}
+ohmyzsh/ohmyzsh path:plugins/ssh-agent
+{{- end }}

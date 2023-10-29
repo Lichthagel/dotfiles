@@ -1,0 +1,9 @@
+{{- if eq .chezmoi.os "windows" }}
+["AppData/Roaming/mpv/shaders"]
+{{- else }}
+[".config/mpv/shaders"]
+{{- end }}
+type = "archive"
+url = "https://github.com/bloc97/Anime4K/releases/download/v4.0.1/Anime4K_v4.0.zip"
+refreshPeriod = "168h"
+checksum.sha256 = "139cd282086457c5adc79caf7b75b8b825091d71c9b54958c18745fea62d7ed7"

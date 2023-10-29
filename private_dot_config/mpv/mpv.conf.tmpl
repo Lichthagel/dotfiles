@@ -1,0 +1,42 @@
+# fullscreen=yes
+# osd-font="Noto Sans"
+# osd-font="Readex Pro Light"
+# vf=vapoursynth=~~/filters/mvtools.vpy
+{{- if eq .chezmoi.hostname "win-jens" }}
+bluray-device=I:
+{{- end }}
+border=no
+#cache=yes
+#cache-secs=30
+cscale=ewa_lanczossharp
+deband=yes
+demuxer-max-bytes=256m
+dvd-device=I:
+geometry=50%+50%+50%
+#gpu-api=vulkan
+interpolation=yes
+keep-open=yes
+osc=no
+osd-bar=no
+osd-duration=2000
+osd-font-size=25
+osd-font="Roboto"
+profile=gpu-hq
+#scale=ewa_lanczossharp
+scale=ewa_lanczos
+scale-blur=0.981251
+{{- if eq .chezmoi.hostname "win-jens" }}
+screenshot-directory=D:\Pictures\Screenshots
+{{- else }}
+screenshot-directory=~/Bilder/Screenshots
+{{- end }}
+screenshot-format=webp
+screenshot-template="%tY-%tm/%tY-%tm-%td_%tH-%tM-%tS"
+screenshot-webp-compression=6
+screenshot-webp-lossless=yes
+sub-font="Readex Pro Medium"
+sub-font-size=43
+tscale=oversample
+video-sync=display-resample
+vo=gpu-next
+volume=60

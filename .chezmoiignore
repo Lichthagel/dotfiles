@@ -12,3 +12,7 @@ AppData/
 .config/mpv/
 AppData/Roaming/mpv/
 {{ end }}
+{{ if not .nushell }}
+.config/nushell/
+AppData/Roaming/nushell/
+{{ end }}

@@ -19,7 +19,9 @@ bindkey "^[[1;5D" backward-word
 bindkey "^[[1;5C" forward-word
 bindkey "^[[3~" delete-char
 
-eval "$(starship init zsh)"
+if command -v starship &>/dev/null; then
+	eval "$(starship init zsh)"
+fi
 
 [ -f /usr/share/zsh-antidote/antidote.zsh ] && source '/usr/share/zsh-antidote/antidote.zsh'
 [ -f ${ZDOTDIR:-~}/.antidote/antidote.zsh ] && source ${ZDOTDIR:-~}/.antidote/antidote.zsh
@@ -40,8 +42,16 @@ fi
 
 [ -f /opt/miniconda3/etc/profile.d/conda.sh ] && source /opt/miniconda3/etc/profile.d/conda.sh
 
-eval "$(zoxide init zsh)"
+if command -v zoxide &>/dev/null; then
+	eval "$(zoxide init zsh)"
+fi
 
-alias ls="eza"
-alias ll="eza -al"
+if command -v eza &>/dev/null; then
+	alias ls="eza"
+	alias ll="eza -alh"
+	alias tree="eza --tree"
+fi
 
+if command -v bat &>/dev/null; then
+	alias cat="bat"
+fi

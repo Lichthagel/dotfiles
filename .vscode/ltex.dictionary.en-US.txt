@@ -1,0 +1,6 @@
+zsh
+Zoxide
+fzf
+mpv
+nushell
+sshagent

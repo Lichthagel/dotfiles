@@ -1,0 +1,2 @@
+{"rule":"UPPERCASE_SENTENCE_START","sentence":"^\\Qdotfiles\\E$"}
+{"rule":"MISSING_GENITIVE","sentence":"^\\QChezmoi data fields\\E$"}

@@ -49,3 +49,12 @@ refreshPeriod = "168h"
 stripComponents = 1
 include = ["*/*.tmTheme"]
 {{- end}}
+
+{{- if eq .chezmoi.os "linux" }}
+[".config/fsh"]
+type = "archive"
+url = "https://github.com/catppuccin/zsh-fsh/archive/refs/heads/main.zip"
+refreshPeriod = "168h"
+stripComponents = 2
+include = ["*/themes/*.ini"]
+{{- end}}

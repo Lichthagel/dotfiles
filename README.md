@@ -4,11 +4,11 @@
 
 - zsh
   - Antidote
-- Zoxide (zsh only) <!-- TODO nushell -->
+- Zoxide
 - Starship
 - bat
-- fzf <!-- TODO include theme in nushell-->
-- skim <!-- TODO include theme in nushell-->
+- fzf <!-- TODO include theme in nushell -->
+- skim <!-- TODO include theme in nushell -->
 
 ## Chezmoi data fields
 

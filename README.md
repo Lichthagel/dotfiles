@@ -7,8 +7,8 @@
 - Zoxide
 - Starship
 - bat
-- fzf <!-- TODO include theme in nushell -->
-- skim <!-- TODO include theme in nushell -->
+- fzf
+- skim
 
 ## Chezmoi data fields
 

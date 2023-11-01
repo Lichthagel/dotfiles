@@ -16,3 +16,6 @@ AppData/Roaming/mpv/
 .config/nushell/
 AppData/Roaming/nushell/
 {{ end }}
+{{ if not .bat }}
+.config/bat/
+{{ end }}

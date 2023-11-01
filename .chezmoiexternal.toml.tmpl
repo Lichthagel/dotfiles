@@ -39,5 +39,13 @@ url = "https://github.com/cniw/mpv-discordRPC/archive/refs/heads/master.zip"
 refreshPeriod = "168h"
 stripComponents = 2
 include = ["mpv-discordRPC-master/mpv-discordRPC/**"]
+{{- end}}
 
+{{- if .bat }}
+[".config/bat/themes"]
+type = "archive"
+url = "https://github.com/catppuccin/bat/archive/refs/heads/main.zip"
+refreshPeriod = "168h"
+stripComponents = 1
+include = ["*/*.tmTheme"]
 {{- end}}

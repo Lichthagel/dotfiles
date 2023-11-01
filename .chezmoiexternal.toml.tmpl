@@ -42,7 +42,7 @@ include = ["mpv-discordRPC-master/mpv-discordRPC/**"]
 {{- end}}
 
 {{- if .bat }}
-[".config/bat/themes"]
+["{{- template "base.tmpl" . -}}/bat/themes"]
 type = "archive"
 url = "https://github.com/catppuccin/bat/archive/refs/heads/main.zip"
 refreshPeriod = "168h"

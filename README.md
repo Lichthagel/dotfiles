@@ -9,6 +9,7 @@
 - bat
 - fzf
 - skim
+- fd
 
 ## Chezmoi data fields
 

@@ -4,3 +4,4 @@ fzf
 mpv
 nushell
 sshagent
+fd

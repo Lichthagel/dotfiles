@@ -5,3 +5,4 @@ mpv
 nushell
 sshagent
 fd
+atuin

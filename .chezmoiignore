@@ -1,21 +1,24 @@
 README.md
-{{ if ne .chezmoi.os "linux" }}
+{{- if ne .chezmoi.os "linux" }}
 .zshrc
 .zsh_plugins.txt
 .config/
 !.config/starship.toml
-{{ end }}
-{{ if ne .chezmoi.os "windows" }}
+{{- end }}
+{{- if ne .chezmoi.os "windows" }}
 AppData/
-{{ end }}
-{{ if not .mpv }}
+{{- end }}
+{{- if not .mpv }}
 .config/mpv/
 AppData/Roaming/mpv/
-{{ end }}
-{{ if not .nushell }}
+{{- end }}
+{{- if not .nushell }}
 .config/nushell/
 AppData/Roaming/nushell/
-{{ end }}
-{{ if not .bat }}
+{{- end }}
+{{- if not .bat }}
 .config/bat/
-{{ end }}
+{{- end }}
+{{- if not .atuin }}
+.config/atuin/
+{{- end }}

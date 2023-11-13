@@ -48,8 +48,8 @@ symbol = " "
 format = "[$symbol$version(-$name)]($style) "
 
 [character]
-success_symbol = "[ν](bold green)"
-error_symbol = "[ν](bold red)"
+success_symbol = "[](bold green)"
+error_symbol = "[](bold red)"
 
 [cmake]
 style = "fg:blue"

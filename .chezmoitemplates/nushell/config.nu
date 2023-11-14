@@ -764,6 +764,6 @@ source ~/.zoxide.nu
 source ~/.local/share/atuin/init.nu
 {{- end }}
 
-if ((which helix | length) > 0) {
-    alias hx = helix
-}
+{{- if .helix }}
+alias hx = helix
+{{- end }}

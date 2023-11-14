@@ -26,3 +26,6 @@ AppData/Roaming/nushell/
 .config/helix/
 AppData/Roaming/helix/
 {{- end }}
+{{- if not .zellij }}
+.config/zellij/
+{{- end }}

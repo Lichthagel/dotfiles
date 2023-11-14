@@ -22,3 +22,7 @@ AppData/Roaming/nushell/
 {{- if not .atuin }}
 .config/atuin/
 {{- end }}
+{{- if not .helix }}
+.config/helix/
+AppData/Roaming/helix/
+{{- end }}

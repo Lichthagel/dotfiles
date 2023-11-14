@@ -63,3 +63,7 @@ fi
 if command -v bat &>/dev/null; then
 	alias cat="bat"
 fi
+
+if command -v helix &>/dev/null; then
+	alias hx="helix"
+fi

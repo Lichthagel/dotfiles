@@ -7,6 +7,12 @@ README.md
 {{- end }}
 {{- if ne .chezmoi.os "windows" }}
 AppData/
+{{- if not .atuin }}
+.config/atuin/
+{{- end }}
+{{- if not .zellij }}
+.config/zellij/
+{{- end }}
 {{- end }}
 {{- if not .mpv }}
 .config/mpv/
@@ -18,14 +24,9 @@ AppData/Roaming/nushell/
 {{- end }}
 {{- if not .bat }}
 .config/bat/
-{{- end }}
-{{- if not .atuin }}
-.config/atuin/
+AppData/Roamin/bat/
 {{- end }}
 {{- if not .helix }}
 .config/helix/
 AppData/Roaming/helix/
-{{- end }}
-{{- if not .zellij }}
-.config/zellij/
 {{- end }}

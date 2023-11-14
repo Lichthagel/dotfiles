@@ -759,3 +759,7 @@ $env.config = {
 use ~/.cache/starship/init.nu
 
 source ~/.zoxide.nu
+
+if ((which helix | length) > 0) {
+    alias hx = helix
+}

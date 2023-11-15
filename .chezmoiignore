@@ -30,3 +30,7 @@ AppData/Roamin/bat/
 .config/helix/
 AppData/Roaming/helix/
 {{- end }}
+{{- if not .nvim }}
+.config/nvim/
+AppData/Local/nvim/
+{{- end }}

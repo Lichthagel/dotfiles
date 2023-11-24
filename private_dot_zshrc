@@ -67,3 +67,6 @@ fi
 if command -v helix &>/dev/null; then
 	alias hx="helix"
 fi
+
+# opam configuration
+[[ ! -r ~/.opam/opam-init/init.zsh ]] || source ~/.opam/opam-init/init.zsh  > /dev/null 2> /dev/null

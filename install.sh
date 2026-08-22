@@ -100,6 +100,21 @@ is_selected() {
     return 1
 }
 
+requirements_met() {
+    local requirements="$1" requirement
+    [ -z "$requirements" ] && return 0
+    case "$requirements" in
+        requires=*) IFS=',' read -ra required_modules <<< "${requirements#requires=}" ;;
+        *) return 2 ;;
+    esac
+    [ "${#required_modules[@]}" -gt 0 ] || return 2
+    for requirement in "${required_modules[@]}"; do
+        [ -n "$requirement" ] || return 2
+        is_selected "$requirement" || return 1
+    done
+    return 0
+}
+
 manager_available() {
     case "$1" in apt|dnf|pacman|brew|mise|scoop|winget) command -v "$1" >/dev/null 2>&1 ;; *) return 1 ;; esac
 }
@@ -344,7 +359,15 @@ failures=0
 for entry in "${MAPS[@]}"; do
     IFS='|' read -r module mapping <<< "$entry"
     is_selected "$module" || continue
-    IFS='|' read -r platform_source target_relative <<< "$mapping"
+    IFS='|' read -r platform_source target_relative requirements <<< "$mapping"
+    requirements_met "$requirements"
+    requirement_status=$?
+    [ "$requirement_status" -eq 0 ] || {
+        [ "$requirement_status" -eq 1 ] && continue
+        printf 'Invalid map requirements for %s: %s\n' "$module" "$requirements" >&2
+        failures=$((failures + 1))
+        continue
+    }
     case "$platform_source" in linux:*) source_relative="${platform_source#linux:}" ;; *) continue ;; esac
     source="$ROOT/modules/$source_relative"
     target_relative="$(expand_map_target "$target_relative")"

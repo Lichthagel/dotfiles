@@ -7,6 +7,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 if grep -Fq 'secret=' "$ROOT/modules/atuin/module.conf"; then failures=$((failures + 1)); fi
 grep -Fq 'setup=linux:atuin/setup.sh' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
+grep -Fq 'map=linux:atuin/bash/50-atuin.bash|${HOME}/.config/bashrc.d/50-atuin.bash|requires=bash' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
 grep -Fq 'run_module_setup' "$ROOT/install.sh" || failures=$((failures + 1))
 grep -Fq 'secrets/${module}.env.age' "$ROOT/install.sh" || failures=$((failures + 1))
 grep -Fq 'modules/dependencies.conf' "$ROOT/install.sh" || failures=$((failures + 1))
@@ -68,6 +69,16 @@ grep -Fq 'age' "$tmp/log/package-installs" || failures=$((failures + 1))
 grep -Fxq 'login -u test-user' "$tmp/log/args" || failures=$((failures + 1))
 printf 'test-password\ntest-key\n' | cmp -s - "$tmp/log/stdin" || failures=$((failures + 1))
 [ ! -e "$tmp/state/dotfiles/secrets" ] || failures=$((failures + 1))
+
+mkdir -p "$tmp/bash-only-home"
+PATH="$tmp/bin:$PATH" HOME="$tmp/bash-only-home" XDG_STATE_HOME="$tmp/bash-only-state" bash "$ROOT/install.sh" --apps bash --yes >/dev/null || failures=$((failures + 1))
+[ ! -e "$tmp/bash-only-home/.config/bashrc.d/50-atuin.bash" ] || failures=$((failures + 1))
+
+mkdir -p "$tmp/bash-atuin-home"
+mkdir -p "$tmp/bash-atuin-home/.config/age"
+printf 'identity\n' > "$tmp/bash-atuin-home/.config/age/keys.txt"
+PATH="$tmp/bin:$PATH" HOME="$tmp/bash-atuin-home" XDG_STATE_HOME="$tmp/bash-atuin-state" ATUIN_TEST_LOG="$tmp/log" DOTFILES_SECRETS_FILE="$tmp/atuin.env.age" bash "$ROOT/install.sh" --apps bash,atuin --yes >/dev/null || failures=$((failures + 1))
+grep -Fxq 'eval "$(atuin init bash)"' "$tmp/bash-atuin-home/.config/bashrc.d/50-atuin.bash" || failures=$((failures + 1))
 
 rm -f "$tmp/log/args" "$tmp/log/stdin"
 PATH="$tmp/bin:$PATH" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state-logged-in" ATUIN_TEST_LOG="$tmp/log" ATUIN_TEST_LOGGED_IN=1 DOTFILES_SECRETS_FILE="$tmp/atuin.env.age" bash "$ROOT/install.sh" --apps atuin --yes >/dev/null || failures=$((failures + 1))

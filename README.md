@@ -44,6 +44,8 @@ Atuin is available as an opt-in package module. Select `atuin` interactively or 
 
 When `atuin` is selected and `secrets/atuin.env.age` exists, the installer decrypts it temporarily and runs Atuin sync login. It expects `ATUIN_USERNAME`, `ATUIN_PASSWORD`, and `ATUIN_KEY`; `ATUIN_SYNC_ADDRESS` is optional. Set `AGE_IDENTITIES` to provide an identity-file path or `AGE_IDENTITY` to provide the age private key contents directly.
 
+Shell modules load numbered integration drop-ins from their platform-specific profile directories. Select both modules to enable an integration: `--apps bash,atuin` installs Atuin's Bash drop-in, and `-Apps powershell,atuin` installs its PowerShell drop-in. Selecting only `atuin` performs package and login setup without changing a shell profile. Module selection does not uninstall an existing drop-in.
+
 Any selected module with a matching `secrets/<module>.env.age` bundle automatically adds the generic `age` dependency to the package plan. No module manifest entry is needed for the dependency.
 
 Interactive setup uses a checklist. Use Up/Down to move, Space to select or deselect an application, Enter to confirm, or Esc/q to cancel. Each module declares `default=true` or `default=false` in its `module.conf`; defaults are selected when the checklist opens.
@@ -54,4 +56,4 @@ When packages are missing, the package checklist lets you use Up/Down to move, L
 
 ## Adding Modules
 
-Add a module directory, its `module.conf`, source files, and a `module=name` line to `modules/manifest.conf`. Keep mappings platform-qualified and use paths relative to the module directory and user home respectively.
+Add a module directory, its `module.conf`, source files, and a `module=name` line to `modules/manifest.conf`. Keep mappings platform-qualified and use paths relative to the module directory and user home respectively. Shell integrations should add a numbered drop-in and declare the required shell with `|requires=bash` or `|requires=powershell` instead of duplicating the complete profile.

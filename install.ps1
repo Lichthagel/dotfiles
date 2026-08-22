@@ -60,7 +60,10 @@ foreach ($entry in $manifest) {
         elseif ($line -match '^default=(true|false)$') { $data.default = [bool]::Parse($Matches[1]) }
         elseif ($line -match '^package=([^|]+)\|([^:]+):(.+)$') { $data.packages += [pscustomobject]@{ Logical = $Matches[1]; Manager = $Matches[2]; Name = $Matches[3] } }
         elseif ($line -match '^setup=(linux|windows):(.+)$') { $data.setups += [pscustomobject]@{ Platform = $Matches[1]; Path = $Matches[2] } }
-        elseif ($line -match '^map=(.+)$') { $data.maps += $Matches[1] }
+        elseif ($line -match '^map=([^|]+)\|([^|]+)(?:\|requires=([A-Za-z0-9_-]+(?:,[A-Za-z0-9_-]+)*))?$') {
+            $requirements = if ($Matches[3]) { @($Matches[3].Split(',')) } else { @() }
+            $data.maps += [pscustomobject]@{ Source = $Matches[1]; Target = $Matches[2]; Requires = $requirements }
+        }
         elseif (-not [string]::IsNullOrWhiteSpace($line) -and -not $line.StartsWith('#')) { throw "Invalid module line: $line" }
     }
     $modules[$name] = $data
@@ -246,9 +249,10 @@ $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $failures = 0
 foreach ($name in $selectedNames) {
     foreach ($mapping in $modules[$name].maps) {
-        if ($mapping -notmatch '^windows:(.+)\|(.+)$') { continue }
+        if ($mapping.Source -notmatch '^windows:(.+)$') { continue }
+        if (@($mapping.Requires | Where-Object { $_ -notin $selectedNames }).Count) { continue }
         $source = Join-Path $Root "modules\$($Matches[1])"
-        $target = Resolve-MapTarget $Matches[2]
+        $target = Resolve-MapTarget $mapping.Target
         if (-not (Test-Path -LiteralPath $source)) { Write-Error "Missing source: $source"; $failures++; continue }
         $parent = Split-Path $target -Parent
         New-Item -ItemType Directory -Force -Path $parent | Out-Null

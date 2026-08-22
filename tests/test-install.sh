@@ -8,6 +8,8 @@ trap 'rm -rf "$tmp"' EXIT
 
 grep -Fq 'default=true' "$ROOT/modules/git/module.conf" || failures=$((failures + 1))
 grep -Fq 'default=true' "$ROOT/modules/bash/module.conf" || failures=$((failures + 1))
+grep -Fq 'for file in "$HOME/.config/bashrc.d/"*.bash' "$ROOT/modules/bash/bashrc" || failures=$((failures + 1))
+if grep -Fq 'atuin init' "$ROOT/modules/bash/bashrc"; then failures=$((failures + 1)); fi
 grep -Fq "\$'\\x1b')" "$ROOT/install.sh" || failures=$((failures + 1))
 grep -Fq 'q)' "$ROOT/install.sh" || failures=$((failures + 1))
 
@@ -23,6 +25,7 @@ mkdir -p "$tmp/home"
 printf 'old\n' > "$tmp/home/.bashrc"
 HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" bash "$ROOT/install.sh" --apps bash >/dev/null || failures=$((failures + 1))
 [ -L "$tmp/home/.bashrc" ] || { printf 'bashrc was not linked through HOME expansion\n' >&2; failures=$((failures + 1)); }
+[ ! -e "$tmp/home/.config/bashrc.d/50-atuin.bash" ] || { printf 'FAIL: Atuin drop-in installed without Atuin\n' >&2; failures=$((failures + 1)); }
 [ -f "$tmp/state/dotfiles/backups"/*/.bashrc ] || { printf 'FAIL: backup missing\n' >&2; failures=$((failures + 1)); }
 
 if HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" bash "$ROOT/install.sh" --apps unknown >/dev/null 2>&1; then

@@ -1,2 +1,6 @@
 # User shell additions belong here.
 export EDITOR="${EDITOR:-vi}"
+
+for file in "$HOME/.config/bashrc.d/"*.bash; do
+    [ -r "$file" ] && . "$file"
+done

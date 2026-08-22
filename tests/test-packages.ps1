@@ -14,6 +14,9 @@ if ('package=atuin|mise:atuin' -notin $atuinModule) { throw 'Atuin mise package 
 if ([string]::Join("`n", $atuinModule) -notmatch '(?m)^default=false$') { throw 'Atuin is not opt-in' }
 if ($atuinModule -match '^secret=') { throw 'Atuin must not declare explicit secrets' }
 if ('setup=windows:atuin/setup.ps1' -notin $atuinModule) { throw 'PowerShell Atuin setup declaration missing' }
+if ('map=windows:atuin/powershell/50-atuin.ps1|$PROFILE\..\Profile.d\50-atuin.ps1|requires=powershell' -notin $atuinModule) { throw 'PowerShell Atuin drop-in declaration missing' }
+if (-not (Test-Path (Join-Path $root 'modules\atuin\powershell\50-atuin.ps1'))) { throw 'PowerShell Atuin drop-in missing' }
+if ((Get-Content (Join-Path $root 'modules\atuin\powershell\50-atuin.ps1') -Raw) -notmatch 'atuin init powershell') { throw 'PowerShell Atuin initialization missing' }
 if ([string]::Join("`n", (Get-Content (Join-Path $root 'install.ps1'))) -match 'Process-AtuinSecrets|atuin login|ATUIN_USERNAME') { throw 'PowerShell installer contains Atuin-specific code' }
 $dependencies = Get-Content (Join-Path $root 'modules\dependencies.conf')
 if ('dependency=age|winget:FiloSottile.age' -notin $dependencies) { throw 'age WinGet dependency missing' }

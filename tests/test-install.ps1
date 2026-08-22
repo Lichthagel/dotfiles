@@ -15,6 +15,7 @@ if ('default=true' -notin (Get-Content (Join-Path $root 'modules\powershell\modu
 if ([string]::Join("`n", (Get-Content (Join-Path $root 'install.ps1'))) -notmatch "Escape|Q") { throw 'PowerShell cancellation handling missing' }
 $output = & (Join-Path $root 'install.ps1') -List | Out-String
 if ($output -notmatch 'git - Git configuration' -or $output -notmatch 'powershell - PowerShell profile') { throw 'list output missing module' }
+if ($output -notmatch 'oh-my-posh - Oh My Posh prompt') { throw 'list output missing oh-my-posh module' }
 if ($output -match '(?m)^shell -') { throw 'legacy shell module is still listed' }
 & pwsh -NoProfile -Command "`$PROFILE = '$profile'; & '$root\install.ps1' -Apps powershell" | Out-Null
 $target = $profile

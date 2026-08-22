@@ -2,10 +2,20 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $manifest = Get-Content (Join-Path $root 'modules\manifest.conf')
 if ('module=atuin' -notin $manifest) { throw 'Atuin module registration missing' }
+if ('module=oh-my-posh' -notin $manifest) { throw 'oh-my-posh module registration missing' }
 $atuinModule = Get-Content (Join-Path $root 'modules\atuin\module.conf')
 if ('name=atuin' -notin $atuinModule) { throw 'Atuin module name missing' }
 if ('default=false' -notin $atuinModule) { throw 'Atuin must be opt-in' }
 $gitModule = Get-Content (Join-Path $root 'modules\git\module.conf')
+$ohMyPoshModule = Get-Content (Join-Path $root 'modules\oh-my-posh\module.conf')
+if ('platforms=linux,windows' -notin $ohMyPoshModule) { throw 'oh-my-posh platforms missing' }
+if ('default=false' -notin $ohMyPoshModule) { throw 'oh-my-posh must be opt-in' }
+if ('map=linux:oh-my-posh/oh-my-posh.config.json|${HOME}/.config/oh-my-posh/config.json' -notin $ohMyPoshModule) { throw 'oh-my-posh Linux config mapping missing' }
+if ('map=windows:oh-my-posh/oh-my-posh.config.json|$PROFILE\..\oh-my-posh.config.json' -notin $ohMyPoshModule) { throw 'oh-my-posh Windows config mapping missing' }
+if ('map=linux:oh-my-posh/bash/10-oh-my-posh.bash|${HOME}/.config/bashrc.d/10-oh-my-posh.bash|requires=bash' -notin $ohMyPoshModule) { throw 'oh-my-posh Bash drop-in declaration missing' }
+if ('map=windows:oh-my-posh/powershell/10-oh-my-posh.ps1|$PROFILE\..\Profile.d\10-oh-my-posh.ps1|requires=powershell' -notin $ohMyPoshModule) { throw 'oh-my-posh PowerShell drop-in declaration missing' }
+if ('package=oh-my-posh|winget:JanDeDobbeleer.OhMyPosh' -notin $ohMyPoshModule) { throw 'oh-my-posh WinGet package declaration missing' }
+if ('package=oh-my-posh|scoop:oh-my-posh' -notin $ohMyPoshModule) { throw 'oh-my-posh Scoop package declaration missing' }
 if ('package=git|winget:Git.Git' -notin $gitModule) { throw 'winget package declaration missing' }
 if ('package=atuin|winget:Atuinsh.Atuin' -notin $atuinModule) { throw 'Atuin WinGet package declaration missing' }
 if ('package=atuin|scoop:atuin' -notin $atuinModule) { throw 'Atuin Scoop package declaration missing' }

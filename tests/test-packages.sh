@@ -3,6 +3,7 @@ set -u
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 failures=0
 grep -Fq 'module=atuin' "$ROOT/modules/manifest.conf" || failures=$((failures + 1))
+grep -Fq 'module=oh-my-posh' "$ROOT/modules/manifest.conf" || failures=$((failures + 1))
 grep -Fq 'name=atuin' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
 grep -Fq 'description=Atuin shell history' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
 grep -Fq 'platforms=linux,windows' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
@@ -16,6 +17,10 @@ grep -Fq 'package=atuin|brew:atuin' "$ROOT/modules/atuin/module.conf" || failure
 grep -Fq 'package=atuin|mise:atuin' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
 grep -Fq 'package=atuin|winget:Atuinsh.Atuin' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
 grep -Fq 'package=atuin|scoop:atuin' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
+grep -Fq 'platforms=linux,windows' "$ROOT/modules/oh-my-posh/module.conf" || failures=$((failures + 1))
+grep -Fq 'default=false' "$ROOT/modules/oh-my-posh/module.conf" || failures=$((failures + 1))
+grep -Fq 'package=oh-my-posh|apt:oh-my-posh' "$ROOT/modules/oh-my-posh/module.conf" || failures=$((failures + 1))
+grep -Fq 'package=oh-my-posh|winget:JanDeDobbeleer.OhMyPosh' "$ROOT/modules/oh-my-posh/module.conf" || failures=$((failures + 1))
 grep -Fq 'dependency=age|apt:age' "$ROOT/modules/dependencies.conf" || failures=$((failures + 1))
 grep -Fq 'dependency=age|winget:FiloSottile.age' "$ROOT/modules/dependencies.conf" || failures=$((failures + 1))
 grep -Fq -- '--yes' "$ROOT/install.sh" || failures=$((failures + 1))

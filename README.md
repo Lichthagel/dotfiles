@@ -36,7 +36,11 @@ The `DOTFILES_REPO_URL` value is required for piped execution because the script
 - `--list` / `-List` lists supported modules.
 - `--help` / `-Help` prints usage.
 
-The initial modules are `git`, `bash`, and `powershell`. Existing targets are moved into a timestamped backup directory before installation. Symlinks are preferred; Windows falls back to copying when link creation is unavailable.
+The initial modules are `git`, `bash`, `powershell`, `atuin`, and `oh-my-posh`. `atuin` and `oh-my-posh` are opt-in. Existing targets are moved into a timestamped backup directory before installation. Symlinks are preferred; Windows falls back to copying when link creation is unavailable.
+
+### Oh My Posh
+
+Oh My Posh is available as an opt-in cross-platform prompt module. Select `oh-my-posh` interactively or use `--apps bash,oh-my-posh` / `-Apps powershell,oh-my-posh` alongside the corresponding shell module. The module installs the shared prompt configuration and a shell-specific integration drop-in.
 
 ### Atuin
 

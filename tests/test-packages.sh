@@ -2,13 +2,28 @@
 set -u
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 failures=0
+grep -Fq 'module=atuin' "$ROOT/modules/manifest.conf" || failures=$((failures + 1))
+grep -Fq 'name=atuin' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
+grep -Fq 'description=Atuin shell history' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
+grep -Fq 'platforms=linux,windows' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
+grep -Fq 'default=false' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
 grep -Fq 'package=git|apt:git' "$ROOT/modules/git/module.conf" || failures=$((failures + 1))
 grep -Fq 'package=git|winget:Git.Git' "$ROOT/modules/git/module.conf" || failures=$((failures + 1))
+grep -Fq 'package=atuin|apt:atuin' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
+grep -Fq 'package=atuin|dnf:atuin' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
+grep -Fq 'package=atuin|pacman:atuin' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
+grep -Fq 'package=atuin|brew:atuin' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
+grep -Fq 'package=atuin|mise:atuin' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
+grep -Fq 'package=atuin|winget:Atuinsh.Atuin' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
+grep -Fq 'package=atuin|scoop:atuin' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
+grep -Fq 'dependency=age|apt:age' "$ROOT/modules/dependencies.conf" || failures=$((failures + 1))
+grep -Fq 'dependency=age|winget:FiloSottile.age' "$ROOT/modules/dependencies.conf" || failures=$((failures + 1))
 grep -Fq -- '--yes' "$ROOT/install.sh" || failures=$((failures + 1))
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin" "$tmp/home"
+shell_path="$(command -v bash)"
 cat > "$tmp/bin/apt" <<'EOF'
 #!/usr/bin/env bash
 exit 0
@@ -43,6 +58,11 @@ if PATH="$tmp/bin:$PATH" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state-failure" ba
     failures=$((failures + 1))
 fi
 [ ! -e "$tmp/home/.gitconfig" ] || { printf 'FAIL: dotfile installed after package failure\n' >&2; failures=$((failures + 1)); }
+
+if PATH="$tmp/bin" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state-atuin" "$shell_path" "$ROOT/install.sh" --apps atuin --yes >/dev/null 2>&1; then
+    printf 'FAIL: Atuin package setup unexpectedly succeeded without a package manager\n' >&2
+    failures=$((failures + 1))
+fi
 
 [ "$failures" -eq 0 ] || exit 1
 printf 'package tests passed\n'

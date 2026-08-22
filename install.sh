@@ -54,6 +54,8 @@ declare -A PLATFORMS=()
 declare -A DEFAULTS=()
 declare -a MAPS=()
 declare -a PACKAGES=()
+declare -a SETUPS=()
+declare -a DEPENDENCIES=()
 
 load_module() {
     local module="$1" config="$ROOT/modules/$1/module.conf" line key value
@@ -66,6 +68,7 @@ load_module() {
             default=*) DEFAULTS["$module"]="${line#default=}" ;;
             map=*) MAPS+=("$module|${line#map=}") ;;
             package=*) PACKAGES+=("$module|${line#package=}") ;;
+            setup=*) SETUPS+=("$module|${line#setup=}") ;;
             '') ;;
             \\#*) ;;
             *) printf 'Invalid manifest line in %s: %s\n' "$config" "$line" >&2; return 1 ;;
@@ -78,6 +81,10 @@ while IFS= read -r module || [ -n "$module" ]; do
     module="${module#module=}"
     load_module "$module" || exit 1
 done < "$ROOT/modules/manifest.conf"
+
+while IFS= read -r dependency || [ -n "$dependency" ]; do
+    case "$dependency" in dependency=*) DEPENDENCIES+=("${dependency#dependency=}") ;; ''|\#*) ;; *) printf 'Invalid dependency line.\n' >&2; exit 1 ;; esac
+done < "$ROOT/modules/dependencies.conf"
 
 if [ "$list_only" -eq 1 ]; then
     for module in "${MODULES[@]}"; do
@@ -121,10 +128,17 @@ package_installed() {
 
 package_plan() {
     PLAN_KEYS=(); PLAN_MODULES=(); PLAN_NAMES=(); PLAN_MANAGERS=(); PLAN_PACKAGE_NAMES=(); PLAN_OPTIONS=(); PLAN_SELECTED=()
-    local entry module declaration logical manager name key chosen options candidate
+    local entry module declaration logical manager name key chosen options candidate selected_module secret_bundle
+    for selected_module in "${selected[@]}"; do
+        secret_bundle="${DOTFILES_SECRETS_FILE:-$ROOT/secrets/${selected_module}.env.age}"
+        if [ -f "$secret_bundle" ]; then
+            for dependency in "${DEPENDENCIES[@]}"; do PACKAGES+=("__dependency|$dependency"); done
+            break
+        fi
+    done
     for entry in "${PACKAGES[@]}"; do
         IFS='|' read -r module declaration <<< "$entry"
-        is_selected "$module" || continue
+        [ "$module" = __dependency ] || is_selected "$module" || continue
         IFS='|' read -r logical declaration <<< "$declaration"
         IFS=':' read -r manager name <<< "$declaration"
         key="$module|$logical"
@@ -184,6 +198,30 @@ install_package() {
         winget) winget install --id "$package" --exact --accept-source-agreements --accept-package-agreements ;;
         *) printf 'Unsupported package manager: %s\n' "$manager" >&2; return 2 ;;
     esac
+}
+
+run_module_setup() {
+    local entry module declaration platform setup_path secret_source secret_keys key
+    source "$ROOT/lib/secrets.sh"
+    for entry in "${SETUPS[@]}"; do
+        IFS='|' read -r module declaration <<< "$entry"
+        is_selected "$module" || continue
+        IFS=':' read -r platform setup_path <<< "$declaration"
+        [ "$platform" = linux ] || continue
+        secret_source="$ROOT/secrets/${module}.env.age"
+        secret_keys=''
+        if [ -n "${DOTFILES_SECRETS_FILE:-}" ] || [ -f "$secret_source" ]; then
+            DOTFILES_SECRET_FILE="${DOTFILES_SECRETS_FILE:-$secret_source}"
+            DOTFILES_SECRET_KEYS=''
+            dotfiles_decrypt_env || return 1
+        else
+            DOTFILES_SECRET_FILE=''
+            DOTFILES_SECRET_KEYS=''
+        fi
+        DOTFILES_ROOT="$ROOT" DOTFILES_SECRET_FILE="$DOTFILES_SECRET_FILE" DOTFILES_SECRET_KEYS="$DOTFILES_SECRET_KEYS" \
+            "$ROOT/modules/$setup_path" || { dotfiles_cleanup_secrets; return 1; }
+        dotfiles_cleanup_secrets
+    done
 }
 
 interactive_select() {
@@ -279,6 +317,8 @@ for i in "${!PLAN_NAMES[@]}"; do
         printf 'Skipped package %s for module %s; dotfiles were still installed.\n' "${PLAN_NAMES[$i]}" "${PLAN_MODULES[$i]}"
     fi
 done
+
+run_module_setup || exit 1
 
 timestamp="$(date +%Y%m%d-%H%M%S)"
 failures=0

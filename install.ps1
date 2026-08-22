@@ -40,19 +40,26 @@ if ($Help) {
 }
 
 $modules = @{}
+$dependencies = @()
+$dependencyManifest = Join-Path $Root 'modules\dependencies.conf'
+foreach ($line in Get-Content $dependencyManifest) {
+    if ($line -match '^dependency=([^|]+)\|([^:]+):(.+)$') { $dependencies += [pscustomobject]@{ Logical = $Matches[1]; Manager = $Matches[2]; Name = $Matches[3] } }
+    elseif (-not [string]::IsNullOrWhiteSpace($line) -and -not $line.StartsWith('#')) { throw "Invalid dependency line: $line" }
+}
 $manifest = Get-Content (Join-Path $Root 'modules\manifest.conf')
 foreach ($entry in $manifest) {
     if ([string]::IsNullOrWhiteSpace($entry) -or $entry.StartsWith('#')) { continue }
     if ($entry -notmatch '^module=([A-Za-z0-9_-]+)$') { throw "Invalid manifest line: $entry" }
     $name = $Matches[1]
     $config = Join-Path $Root "modules\$name\module.conf"
-    $data = @{ maps = @(); packages = @() }
+    $data = @{ maps = @(); packages = @(); setups = @() }
     foreach ($line in Get-Content $config) {
         if ($line -match '^name=(.+)$') { $data.name = $Matches[1] }
         elseif ($line -match '^description=(.+)$') { $data.description = $Matches[1] }
         elseif ($line -match '^platforms=(.+)$') { $data.platforms = $Matches[1].Split(',') }
         elseif ($line -match '^default=(true|false)$') { $data.default = [bool]::Parse($Matches[1]) }
         elseif ($line -match '^package=([^|]+)\|([^:]+):(.+)$') { $data.packages += [pscustomobject]@{ Logical = $Matches[1]; Manager = $Matches[2]; Name = $Matches[3] } }
+        elseif ($line -match '^setup=(linux|windows):(.+)$') { $data.setups += [pscustomobject]@{ Platform = $Matches[1]; Path = $Matches[2] } }
         elseif ($line -match '^map=(.+)$') { $data.maps += $Matches[1] }
         elseif (-not [string]::IsNullOrWhiteSpace($line) -and -not $line.StartsWith('#')) { throw "Invalid module line: $line" }
     }
@@ -73,10 +80,16 @@ function Test-PackageInstalled($manager, $package) {
 }
 function Get-PackagePlan($selectedNames) {
     $plan = @()
-    foreach ($moduleName in $selectedNames) {
-        $logicalNames = @($modules[$moduleName].packages.Logical | Sort-Object -Unique)
+    $inputs = @()
+    foreach ($moduleName in $selectedNames) { $inputs += [pscustomobject]@{ Module = $moduleName; Packages = $modules[$moduleName].packages } }
+    if ($selectedNames | Where-Object { $env:DOTFILES_SECRETS_FILE -or (Test-Path -LiteralPath (Join-Path $Root "secrets\$_.env.age")) }) {
+        $inputs += [pscustomobject]@{ Module = '__dependency'; Packages = $dependencies }
+    }
+    foreach ($input in $inputs) {
+        $moduleName = $input.Module
+        $logicalNames = @($input.Packages.Logical | Sort-Object -Unique)
         foreach ($logical in $logicalNames) {
-            $options = @($modules[$moduleName].packages | Where-Object { $_.Logical -eq $logical -and $_.Manager -in $managerValid.windows -and (Test-ManagerAvailable $_.Manager) })
+            $options = @($input.Packages | Where-Object { $_.Logical -eq $logical -and $_.Manager -in $managerValid.windows -and (Test-ManagerAvailable $_.Manager) })
             if (-not $options.Count) { throw "No supported package manager is available for $logical." }
             $chosen = $null
             foreach ($manager in $managerPriority) {
@@ -111,6 +124,31 @@ function Select-PackagePlan($plan) {
             'Escape' { Clear-Host; return 'cancel' }
             'Q' { Clear-Host; return 'cancel' }
             'Enter' { Clear-Host; return 'ok' }
+        }
+    }
+}
+function Invoke-ModuleSetup($selectedNames) {
+    . (Join-Path $Root 'lib\secrets.ps1')
+    foreach ($moduleName in $selectedNames) {
+        $setup = @($modules[$moduleName].setups | Where-Object Platform -eq 'windows' | Select-Object -First 1)
+        if (-not $setup.Count) { continue }
+        $previousRoot = $env:DOTFILES_ROOT
+        $previousFile = $env:DOTFILES_SECRET_FILE
+        $previousKeys = $env:DOTFILES_SECRET_KEYS
+        $state = $null
+        try {
+            $env:DOTFILES_ROOT = $Root
+            $defaultSecret = Join-Path $Root "secrets\$moduleName.env.age"
+            $env:DOTFILES_SECRET_FILE = if ($env:DOTFILES_SECRETS_FILE) { $env:DOTFILES_SECRETS_FILE } elseif (Test-Path -LiteralPath $defaultSecret) { $defaultSecret } else { '' }
+            $env:DOTFILES_SECRET_KEYS = ''
+            if ($env:DOTFILES_SECRET_FILE) { $state = Initialize-DotfilesSecrets }
+            & (Join-Path $Root "modules\$($setup[0].Path)")
+            if ($LASTEXITCODE -ne 0) { throw "Module setup failed: $moduleName" }
+        } finally {
+            Remove-DotfilesSecrets $state
+            $env:DOTFILES_ROOT = $previousRoot
+            $env:DOTFILES_SECRET_FILE = $previousFile
+            $env:DOTFILES_SECRET_KEYS = $previousKeys
         }
     }
 }
@@ -193,6 +231,8 @@ if ($packagePlan.Count) {
         else { Write-Output "Skipped package $($package.Logical) for module $($package.Module); dotfiles were still installed." }
     }
 }
+
+Invoke-ModuleSetup $selectedNames
 
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $failures = 0

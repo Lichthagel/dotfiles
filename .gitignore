@@ -1,5 +1,6 @@
 # Local installer state
 .dotfiles-cache/
+secrets/*.env
 
 # Editor and operating-system noise
 .DS_Store

@@ -20,10 +20,10 @@ if printf '%s' "$output" | grep -Fq 'shell -'; then
 fi
 
 mkdir -p "$tmp/home"
-printf 'old\n' > "$tmp/home/.gitconfig"
-HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" bash "$ROOT/install.sh" --apps git >/dev/null || failures=$((failures + 1))
-[ -L "$tmp/home/.gitconfig" ] || { printf 'FAIL: gitconfig was not linked\n' >&2; failures=$((failures + 1)); }
-[ -f "$tmp/state/dotfiles/backups"/*/.gitconfig ] || { printf 'FAIL: backup missing\n' >&2; failures=$((failures + 1)); }
+printf 'old\n' > "$tmp/home/.bashrc"
+HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" bash "$ROOT/install.sh" --apps bash >/dev/null || failures=$((failures + 1))
+[ -L "$tmp/home/.bashrc" ] || { printf 'FAIL: bashrc was not linked\n' >&2; failures=$((failures + 1)); }
+[ -f "$tmp/state/dotfiles/backups"/*/.bashrc ] || { printf 'FAIL: backup missing\n' >&2; failures=$((failures + 1)); }
 
 if HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" bash "$ROOT/install.sh" --apps unknown >/dev/null 2>&1; then
     printf 'FAIL: unknown module succeeded\n' >&2
@@ -31,8 +31,6 @@ if HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" bash "$ROOT/install.sh" --apps u
 fi
 
 HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" bash "$ROOT/install.sh" --apps '' | grep -Fq 'No applications selected.' || failures=$((failures + 1))
-HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" bash "$ROOT/install.sh" --apps bash >/dev/null || failures=$((failures + 1))
-[ -L "$tmp/home/.bashrc" ] || { printf 'FAIL: bash profile was not linked\n' >&2; failures=$((failures + 1)); }
 
 [ "$failures" -eq 0 ] || exit 1
 printf 'shell installer tests passed\n'

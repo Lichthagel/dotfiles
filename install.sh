@@ -3,7 +3,7 @@ set -u
 
 usage() {
     cat <<'EOF'
-Usage: install.sh [--apps name1,name2] [--list] [--help]
+Usage: install.sh [--apps name1,name2] [--yes] [--list] [--help]
 
 Install selected dotfiles modules. Without --apps, selection is interactive.
 EOF
@@ -31,6 +31,7 @@ BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/backups"
 requested_apps=""
 apps_provided=0
 list_only=0
+yes_mode=0
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -41,6 +42,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         --list) list_only=1; shift ;;
+        --yes) yes_mode=1; shift ;;
         --help|-h) usage; exit 0 ;;
         *) printf 'Unknown argument: %s\n' "$1" >&2; usage >&2; exit 2 ;;
     esac
@@ -51,6 +53,7 @@ declare -A DESCRIPTIONS=()
 declare -A PLATFORMS=()
 declare -A DEFAULTS=()
 declare -a MAPS=()
+declare -a PACKAGES=()
 
 load_module() {
     local module="$1" config="$ROOT/modules/$1/module.conf" line key value
@@ -62,6 +65,7 @@ load_module() {
             platforms=*) PLATFORMS["$module"]="${line#platforms=}" ;;
             default=*) DEFAULTS["$module"]="${line#default=}" ;;
             map=*) MAPS+=("$module|${line#map=}") ;;
+            package=*) PACKAGES+=("$module|${line#package=}") ;;
             '') ;;
             \\#*) ;;
             *) printf 'Invalid manifest line in %s: %s\n' "$config" "$line" >&2; return 1 ;;
@@ -87,6 +91,99 @@ is_selected() {
     IFS=',' read -ra items <<< "$requested_apps"
     for item in "${items[@]}"; do [ "$item" = "$needle" ] && return 0; done
     return 1
+}
+
+manager_available() {
+    case "$1" in apt|dnf|pacman|brew|mise|scoop|winget) command -v "$1" >/dev/null 2>&1 ;; *) return 1 ;; esac
+}
+
+manager_valid() {
+    case "$1:$2" in
+        linux:apt|linux:dnf|linux:pacman|linux:brew|linux:mise) return 0 ;;
+        windows:winget|windows:scoop|windows:brew|windows:mise) return 0 ;;
+    esac
+    return 1
+}
+
+manager_priority=(apt dnf pacman winget brew mise scoop)
+package_installed() {
+    case "$1" in
+        apt) dpkg-query -W -f='${Status}' "$2" 2>/dev/null | grep -q 'install ok installed' ;;
+        dnf) rpm -q "$2" >/dev/null 2>&1 ;;
+        pacman) pacman -Q "$2" >/dev/null 2>&1 ;;
+        brew) brew list --versions "$2" >/dev/null 2>&1 ;;
+        mise) mise list 2>/dev/null | awk '{print $1}' | grep -Fxq "$2" ;;
+        winget) winget list --id "$2" --exact --accept-source-agreements 2>/dev/null | grep -Fq "$2" ;;
+        scoop) scoop list 2>/dev/null | awk '{print $1}' | grep -Fxq "$2" ;;
+        *) return 1 ;;
+    esac
+}
+
+package_plan() {
+    PLAN_KEYS=(); PLAN_MODULES=(); PLAN_NAMES=(); PLAN_MANAGERS=(); PLAN_PACKAGE_NAMES=(); PLAN_OPTIONS=(); PLAN_SELECTED=()
+    local entry module declaration logical manager name key chosen options candidate
+    for entry in "${PACKAGES[@]}"; do
+        IFS='|' read -r module declaration <<< "$entry"
+        is_selected "$module" || continue
+        IFS='|' read -r logical declaration <<< "$declaration"
+        IFS=':' read -r manager name <<< "$declaration"
+        key="$module|$logical"
+        found=0
+        for candidate in "${PLAN_KEYS[@]}"; do [ "$candidate" = "$key" ] && found=1; done
+        [ "$found" -eq 1 ] && continue
+        options=""
+        for priority in "${manager_priority[@]}"; do
+            manager_valid linux "$priority" && manager_available "$priority" || continue
+            for other in "${PACKAGES[@]}"; do
+                IFS='|' read -r other_module other_decl <<< "$other"
+                [ "$other_module|${other_decl%%|*}" = "$key" ] || continue
+                IFS='|' read -r other_logical other_manager_name <<< "$other_decl"
+                IFS=':' read -r other_manager other_name <<< "$other_manager_name"
+                [ "$other_manager" = "$priority" ] && options="${options:+$options,}$other_manager:$other_name"
+            done
+        done
+        [ -n "$options" ] || { printf 'No supported package manager is available for %s.\n' "$logical" >&2; return 2; }
+        chosen="${options%%,*}"
+        manager="${chosen%%:*}"; name="${chosen#*:}"
+        package_installed "$manager" "$name" && continue
+        PLAN_KEYS+=("$key"); PLAN_MODULES+=("$module"); PLAN_NAMES+=("$logical"); PLAN_MANAGERS+=("$manager"); PLAN_PACKAGE_NAMES+=("$name"); PLAN_OPTIONS+=("$options"); PLAN_SELECTED+=(1)
+    done
+    [ "${#PLAN_KEYS[@]}" -gt 0 ] || return 0
+    if [ "$yes_mode" -eq 1 ]; then return 0; fi
+    [ -t 0 ] && [ -t 1 ] || { printf 'Package confirmation requires a terminal. Use --yes for noninteractive setup.\n' >&2; return 2; }
+    local index=0 key_input option_index current options_array
+    while true; do
+        printf '\033[2J\033[HPackage plan (Up/Down move, Left/Right manager, Space toggle, Enter install, b back):\n'
+        for ((i=0; i<${#PLAN_NAMES[@]}; i++)); do
+            marker=' '; [ "${PLAN_SELECTED[$i]}" -eq 1 ] && marker='x'
+            [ "$i" -eq "$index" ] && pointer='>' || pointer=' '
+            printf '%s [%s] %s -> %s\n' "$pointer" "$marker" "${PLAN_NAMES[$i]}" "${PLAN_MANAGERS[$i]}"
+        done
+        IFS= read -rsn1 key_input
+        case "$key_input" in
+            $'\x1b') IFS=read -rsn2 key_input; case "$key_input" in '[A') [ "$index" -gt 0 ] && index=$((index-1)) ;; '[B') [ "$index" -lt $((${#PLAN_NAMES[@]}-1)) ] && index=$((index+1)) ;; '[C'|'[D') IFS=',' read -ra options_array <<< "${PLAN_OPTIONS[$index]}"; option_index=0; for i in "${!options_array[@]}"; do [ "${options_array[$i]%%:*}" = "${PLAN_MANAGERS[$index]}" ] && option_index=$i; done; [ "$key_input" = '[C' ] && option_index=$(( (option_index + 1) % ${#options_array[@]} )) || option_index=$(( (option_index - 1 + ${#options_array[@]}) % ${#options_array[@]} )); PLAN_MANAGERS[$index]="${options_array[$option_index]%%:*}"; PLAN_PACKAGE_NAMES[$index]="${options_array[$option_index]#*:}" ;; esac ;;
+            ' ') [ "${PLAN_SELECTED[$index]}" -eq 1 ] && PLAN_SELECTED[$index]=0 || PLAN_SELECTED[$index]=1 ;;
+            b) return 3 ;;
+            q) return 2 ;;
+            '') break ;;
+        esac
+    done
+    printf '\033[2J\033[H'
+    return 0
+}
+
+install_package() {
+    local manager="$1" package="$2" prefix=()
+    case "$manager" in
+        apt) command -v run0 >/dev/null 2>&1 && prefix=(run0) || prefix=(sudo); "${prefix[@]}" apt-get install -y "$package" ;;
+        dnf) command -v run0 >/dev/null 2>&1 && prefix=(run0) || prefix=(sudo); "${prefix[@]}" dnf install -y "$package" ;;
+        pacman) command -v run0 >/dev/null 2>&1 && prefix=(run0) || prefix=(sudo); "${prefix[@]}" pacman -S --needed --noconfirm "$package" ;;
+        brew) brew install "$package" ;;
+        mise) mise use --global "$package" ;;
+        scoop) scoop install "$package" ;;
+        winget) winget install --id "$package" --exact --accept-source-agreements --accept-package-agreements ;;
+        *) printf 'Unsupported package manager: %s\n' "$manager" >&2; return 2 ;;
+    esac
 }
 
 interactive_select() {
@@ -151,12 +248,36 @@ if [ -z "$requested_apps" ]; then
     exit 0
 fi
 
-IFS=',' read -ra selected <<< "$requested_apps"
-for module in "${selected[@]}"; do
-    is_known=0
-    for known in "${MODULES[@]}"; do [ "$known" = "$module" ] && is_known=1; done
-    [ "$is_known" -eq 1 ] || { printf 'Unknown application: %s\n' "$module" >&2; exit 2; }
-    case ",${PLATFORMS[$module]}," in *,linux,*) ;; *) printf 'Application not supported on Linux: %s\n' "$module" >&2; exit 2 ;; esac
+while true; do
+    IFS=',' read -ra selected <<< "$requested_apps"
+    for module in "${selected[@]}"; do
+        is_known=0
+        for known in "${MODULES[@]}"; do [ "$known" = "$module" ] && is_known=1; done
+        [ "$is_known" -eq 1 ] || { printf 'Unknown application: %s\n' "$module" >&2; exit 2; }
+        case ",${PLATFORMS[$module]}," in *,linux,*) ;; *) printf 'Application not supported on Linux: %s\n' "$module" >&2; exit 2 ;; esac
+    done
+    package_plan
+    package_status=$?
+    [ "$package_status" -eq 3 ] && [ "$apps_provided" -eq 0 ] && { interactive_select || exit $?; [ "$selection_cancelled" -eq 0 ] || { printf 'Selection cancelled.\n'; exit 0; }; [ -n "$requested_apps" ] || { printf 'No applications selected.\n'; exit 0; }; continue; }
+    [ "$package_status" -eq 0 ] || exit "$package_status"
+    break
+done
+
+if [ "${#PLAN_NAMES[@]}" -gt 0 ] && [ "$yes_mode" -eq 0 ]; then
+    printf 'Install these packages? [y/N]: '
+    IFS= read -r package_confirmation
+    case "$package_confirmation" in
+        y|Y|yes|YES) ;;
+        *) printf 'Package installation declined.\n'; exit 0 ;;
+    esac
+fi
+
+for i in "${!PLAN_NAMES[@]}"; do
+    if [ "${PLAN_SELECTED[$i]}" -eq 1 ]; then
+        install_package "${PLAN_MANAGERS[$i]}" "${PLAN_PACKAGE_NAMES[$i]}" || { printf 'Package installation failed: %s\n' "${PLAN_NAMES[$i]}" >&2; exit 1; }
+    else
+        printf 'Skipped package %s for module %s; dotfiles were still installed.\n' "${PLAN_NAMES[$i]}" "${PLAN_MODULES[$i]}"
+    fi
 done
 
 timestamp="$(date +%Y%m%d-%H%M%S)"

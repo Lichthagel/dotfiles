@@ -2,7 +2,8 @@
 param(
     [string]$Apps,
     [switch]$List,
-    [switch]$Help
+    [switch]$Help,
+    [switch]$Yes
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,9 +22,10 @@ if (-not (Test-Path (Join-Path $Root 'modules\manifest.conf'))) {
         $extracted = Get-ChildItem -LiteralPath $bootstrapDir -Directory | Where-Object { $_.Name -ne 'repo.zip' } | Select-Object -First 1
         if (-not $extracted) { throw 'Repository archive did not contain a root directory.' }
         $forwarded = @{}
-        if ($Apps) { $forwarded.Apps = $Apps }
+        if ($PSBoundParameters.ContainsKey('Apps')) { $forwarded.Apps = $Apps }
         if ($List) { $forwarded.List = $true }
         if ($Help) { $forwarded.Help = $true }
+        if ($Yes) { $forwarded.Yes = $true }
         & (Join-Path $extracted.FullName 'install.ps1') @forwarded
         exit $LASTEXITCODE
     } finally {
@@ -32,7 +34,7 @@ if (-not (Test-Path (Join-Path $Root 'modules\manifest.conf'))) {
 }
 
 if ($Help) {
-    Write-Output 'Usage: install.ps1 [-Apps name1,name2] [-List] [-Help]'
+    Write-Output 'Usage: install.ps1 [-Apps name1,name2] [-Yes] [-List] [-Help]'
     Write-Output 'Install selected dotfiles modules. Without -Apps, selection is interactive.'
     exit 0
 }
@@ -44,16 +46,83 @@ foreach ($entry in $manifest) {
     if ($entry -notmatch '^module=([A-Za-z0-9_-]+)$') { throw "Invalid manifest line: $entry" }
     $name = $Matches[1]
     $config = Join-Path $Root "modules\$name\module.conf"
-    $data = @{ maps = @() }
+    $data = @{ maps = @(); packages = @() }
     foreach ($line in Get-Content $config) {
         if ($line -match '^name=(.+)$') { $data.name = $Matches[1] }
         elseif ($line -match '^description=(.+)$') { $data.description = $Matches[1] }
         elseif ($line -match '^platforms=(.+)$') { $data.platforms = $Matches[1].Split(',') }
         elseif ($line -match '^default=(true|false)$') { $data.default = [bool]::Parse($Matches[1]) }
+        elseif ($line -match '^package=([^|]+)\|([^:]+):(.+)$') { $data.packages += [pscustomobject]@{ Logical = $Matches[1]; Manager = $Matches[2]; Name = $Matches[3] } }
         elseif ($line -match '^map=(.+)$') { $data.maps += $Matches[1] }
         elseif (-not [string]::IsNullOrWhiteSpace($line) -and -not $line.StartsWith('#')) { throw "Invalid module line: $line" }
     }
     $modules[$name] = $data
+}
+
+$managerPriority = @('winget', 'scoop', 'brew', 'mise')
+$managerValid = @{ windows = @('winget', 'scoop', 'brew', 'mise') }
+function Test-ManagerAvailable($manager) { return [bool](Get-Command $manager -ErrorAction SilentlyContinue) }
+function Test-PackageInstalled($manager, $package) {
+    switch ($manager) {
+        'winget' { return [bool]((& winget list --id $package --exact --accept-source-agreements 2>$null) -match [regex]::Escape($package)) }
+        'scoop' { return [bool]((& scoop list 2>$null) -match "(?m)^$([regex]::Escape($package))\s") }
+        'brew' { & brew list --versions $package *> $null; return $LASTEXITCODE -eq 0 }
+        'mise' { return [bool]((& mise list 2>$null) -match "(?m)^$([regex]::Escape($package))\s") }
+    }
+    return $false
+}
+function Get-PackagePlan($selectedNames) {
+    $plan = @()
+    foreach ($moduleName in $selectedNames) {
+        $logicalNames = @($modules[$moduleName].packages.Logical | Sort-Object -Unique)
+        foreach ($logical in $logicalNames) {
+            $options = @($modules[$moduleName].packages | Where-Object { $_.Logical -eq $logical -and $_.Manager -in $managerValid.windows -and (Test-ManagerAvailable $_.Manager) })
+            if (-not $options.Count) { throw "No supported package manager is available for $logical." }
+            $chosen = $null
+            foreach ($manager in $managerPriority) {
+                $candidate = $options | Where-Object Manager -eq $manager | Select-Object -First 1
+                if ($candidate) { if (Test-PackageInstalled $candidate.Manager $candidate.Name) { $chosen = $null; break }; if (-not $chosen) { $chosen = $candidate } }
+            }
+            if ($chosen) { $plan += [pscustomobject]@{ Module = $moduleName; Logical = $logical; Options = $options; Manager = $chosen.Manager; Name = $chosen.Name; Selected = $true } }
+        }
+    }
+    return @($plan)
+}
+function Select-PackagePlan($plan) {
+    if (-not $plan.Count) { return 'ok' }
+    if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) { throw 'Package confirmation requires a terminal. Use -Yes for noninteractive setup.' }
+    $cursor = 0
+    while ($true) {
+        Clear-Host
+        Write-Output 'Package plan (Up/Down move, Left/Right manager, Space toggle, Enter install, b back):'
+        for ($i = 0; $i -lt $plan.Count; $i++) {
+            $marker = if ($plan[$i].Selected) { 'x' } else { ' ' }
+            $pointer = if ($i -eq $cursor) { '>' } else { ' ' }
+            Write-Output "$pointer [$marker] $($plan[$i].Logical) -> $($plan[$i].Manager)"
+        }
+        $key = [Console]::ReadKey($true)
+        switch ($key.Key) {
+            'UpArrow' { if ($cursor -gt 0) { $cursor-- } }
+            'DownArrow' { if ($cursor -lt ($plan.Count - 1)) { $cursor++ } }
+            'LeftArrow' { $options = @($plan[$cursor].Options); $position = [array]::IndexOf($options.Manager, $plan[$cursor].Manager); $position = ($position - 1 + $options.Count) % $options.Count; $plan[$cursor].Manager = $options[$position].Manager; $plan[$cursor].Name = $options[$position].Name }
+            'RightArrow' { $options = @($plan[$cursor].Options); $position = [array]::IndexOf($options.Manager, $plan[$cursor].Manager); $position = ($position + 1) % $options.Count; $plan[$cursor].Manager = $options[$position].Manager; $plan[$cursor].Name = $options[$position].Name }
+            'Spacebar' { $plan[$cursor].Selected = -not $plan[$cursor].Selected }
+            'B' { Clear-Host; return 'back' }
+            'Escape' { Clear-Host; return 'cancel' }
+            'Q' { Clear-Host; return 'cancel' }
+            'Enter' { Clear-Host; return 'ok' }
+        }
+    }
+}
+function Install-Package($manager, $package) {
+    switch ($manager) {
+        'winget' { & winget install --id $package --exact --accept-source-agreements --accept-package-agreements }
+        'scoop' { & scoop install $package }
+        'brew' { & brew install $package }
+        'mise' { & mise use --global $package }
+        default { throw "Unsupported package manager: $manager" }
+    }
+    if ($LASTEXITCODE -ne 0) { throw "Package installation failed: $package" }
 }
 
 if ($List) {
@@ -104,6 +173,25 @@ $selectedNames = @($Apps.Split(',') | ForEach-Object { $_.Trim() } | Where-Objec
 foreach ($name in $selectedNames) {
     if (-not $modules.ContainsKey($name)) { throw "Unknown application: $name" }
     if ($modules[$name].platforms -notcontains 'windows') { throw "Application not supported on Windows: $name" }
+}
+
+$packagePlan = Get-PackagePlan $selectedNames
+if ($packagePlan.Count) {
+    if (-not $Yes) {
+        $packageResult = Select-PackagePlan $packagePlan
+        if ($packageResult -eq 'cancel') { Write-Output 'Selection cancelled.'; exit 0 }
+        if ($packageResult -eq 'back') {
+            if ($PSBoundParameters.ContainsKey('Apps')) { Write-Output 'Module selection is fixed by -Apps.'; exit 0 }
+            & $PSCommandPath
+            exit $LASTEXITCODE
+        }
+        $confirmation = Read-Host 'Install these packages? [y/N]'
+        if ($confirmation -notmatch '^(y|yes)$') { Write-Output 'Package installation declined.'; exit 0 }
+    }
+    foreach ($package in $packagePlan) {
+        if ($package.Selected) { Install-Package $package.Manager $package.Name }
+        else { Write-Output "Skipped package $($package.Logical) for module $($package.Module); dotfiles were still installed." }
+    }
 }
 
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'

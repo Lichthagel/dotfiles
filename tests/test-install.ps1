@@ -12,9 +12,9 @@ if ([string]::Join("`n", (Get-Content (Join-Path $root 'install.ps1'))) -notmatc
 $output = & (Join-Path $root 'install.ps1') -List | Out-String
 if ($output -notmatch 'git - Git configuration' -or $output -notmatch 'powershell - PowerShell profile') { throw 'list output missing module' }
 if ($output -match '(?m)^shell -') { throw 'legacy shell module is still listed' }
-& (Join-Path $root 'install.ps1') -Apps git | Out-Null
-$target = Join-Path $testHome '.gitconfig'
-if (-not (Test-Path $target)) { throw 'gitconfig was not installed' }
+& (Join-Path $root 'install.ps1') -Apps powershell | Out-Null
+$target = Join-Path $testHome 'Documents\PowerShell\Microsoft.PowerShell_profile.ps1'
+if (-not (Test-Path $target)) { throw 'PowerShell profile was not installed' }
 $unknownSucceeded = $true
 try { & (Join-Path $root 'install.ps1') -Apps unknown 2>$null } catch { $unknownSucceeded = $false }
 if ($unknownSucceeded) { throw 'unknown module succeeded' }

@@ -32,12 +32,17 @@ The `DOTFILES_REPO_URL` value is required for piped execution because the script
 
 - `--apps git,bash` selects modules without prompting on Linux.
 - `-Apps git,powershell` is the PowerShell equivalent.
+- `--yes` / `-Yes` accepts the package plan without a confirmation prompt.
 - `--list` / `-List` lists supported modules.
 - `--help` / `-Help` prints usage.
 
 The initial modules are `git`, `bash`, and `powershell`. Existing targets are moved into a timestamped backup directory before installation. Symlinks are preferred; Windows falls back to copying when link creation is unavailable.
 
 Interactive setup uses a checklist. Use Up/Down to move, Space to select or deselect an application, Enter to confirm, or Esc/q to cancel. Each module declares `default=true` or `default=false` in its `module.conf`; defaults are selected when the checklist opens.
+
+Modules can declare manager-specific packages with entries such as `package=git|apt:git` and `package=git|winget:Git.Git`. Linux prefers `apt`, `dnf`, and `pacman`, then falls back to `brew` and `mise`. Windows prefers `winget`, then falls back to `scoop`, `brew`, and `mise`. `run0` is preferred over `sudo` for system managers.
+
+When packages are missing, the package checklist lets you use Up/Down to move, Left/Right to choose a manager per package, Space to include or exclude a package, Enter to continue, and `b` to return to module selection. Esc/q cancels setup. Deselecting a missing package still installs the selected module's dotfiles and prints a warning.
 
 ## Adding Modules
 

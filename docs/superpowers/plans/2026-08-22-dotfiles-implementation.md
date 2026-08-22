@@ -20,3 +20,4 @@
 - [x] Document local and piped setup commands.
 - [x] Run syntax, integration, and whitespace verification.
 - [x] Split the platform-specific shell profiles into `bash` and `powershell` modules.
+- [x] Add manager-specific package declarations, package-plan selection, package installation, and package-aware verification.

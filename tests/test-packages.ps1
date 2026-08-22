@@ -5,6 +5,15 @@ if ('module=atuin' -notin $manifest) { throw 'Atuin module registration missing'
 if ('module=oh-my-posh' -notin $manifest) { throw 'oh-my-posh module registration missing' }
 if ('module=mise' -notin $manifest) { throw 'mise module registration missing' }
 if ('module=brew' -notin $manifest) { throw 'brew module registration missing' }
+if ('module=scoop' -notin $manifest) { throw 'scoop module registration missing' }
+$scoopModule = Get-Content (Join-Path $root 'modules\scoop\module.conf')
+if ('name=scoop' -notin $scoopModule) { throw 'scoop module name missing' }
+if ('platforms=windows' -notin $scoopModule) { throw 'scoop module must be Windows-only' }
+if ('default=false' -notin $scoopModule) { throw 'scoop module must be opt-in' }
+if ('provides=scoop' -notin $scoopModule) { throw 'scoop provider declaration missing' }
+if ('setup=windows:scoop/setup.ps1' -notin $scoopModule) { throw 'scoop setup declaration missing' }
+if ((Get-Content (Join-Path $root 'modules\scoop\setup.ps1') -Raw) -notmatch 'get\.scoop\.sh') { throw 'scoop setup script missing official installer' }
+if ((Get-Content (Join-Path $root 'modules\scoop\powershell\05-scoop.ps1') -Raw) -notmatch 'scoop\\shims') { throw 'scoop PowerShell integration missing' }
 $brewModule = Get-Content (Join-Path $root 'modules\brew\module.conf')
 if ('name=brew' -notin $brewModule) { throw 'brew module name missing' }
 if ('platforms=linux' -notin $brewModule) { throw 'brew module must be Linux-only' }

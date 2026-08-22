@@ -331,7 +331,7 @@ foreach ($phase in $phases) {
             else { Write-Output "Skipped package $($package.Logical) for module $($package.Module); dotfiles were still installed." }
         }
     }
-    $env:Path = "$HOME\.local\bin;$env:Path"
+    $env:Path = "$HOME\.local\bin;$HOME\scoop\shims;$env:Path"
     if ($env:LOCALAPPDATA) { $env:Path = "$(Join-Path $env:LOCALAPPDATA 'mise\bin');$(Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links');$env:Path" }
     Invoke-ModuleSetup $phase.Modules
     Install-ModuleMappings $phase.Modules

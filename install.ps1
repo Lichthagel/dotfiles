@@ -162,6 +162,14 @@ function Install-Package($manager, $package) {
     }
     if ($LASTEXITCODE -ne 0) { throw "Package installation failed: $package" }
 }
+function Resolve-MapTarget($target) {
+    $target = $target.Replace('$PROFILE', [string]$PROFILE)
+    $target = [regex]::Replace($target, '\$env:([A-Za-z_][A-Za-z0-9_]*)', {
+        param($match) [Environment]::GetEnvironmentVariable($match.Groups[1].Value)
+    })
+    if ([System.IO.Path]::IsPathRooted($target)) { return $target }
+    return (Join-Path $DotfilesHome $target)
+}
 
 if ($List) {
     foreach ($name in $modules.Keys | Sort-Object) {
@@ -240,12 +248,13 @@ foreach ($name in $selectedNames) {
     foreach ($mapping in $modules[$name].maps) {
         if ($mapping -notmatch '^windows:(.+)\|(.+)$') { continue }
         $source = Join-Path $Root "modules\$($Matches[1])"
-        $target = Join-Path $DotfilesHome $Matches[2]
+        $target = Resolve-MapTarget $Matches[2]
         if (-not (Test-Path -LiteralPath $source)) { Write-Error "Missing source: $source"; $failures++; continue }
         $parent = Split-Path $target -Parent
         New-Item -ItemType Directory -Force -Path $parent | Out-Null
         if (Test-Path -LiteralPath $target) {
-            $backup = Join-Path $BackupRoot "$timestamp\$($Matches[2])"
+            $backupRelative = if ([System.IO.Path]::IsPathRooted($target)) { $target.TrimStart('\', '/') } else { $Matches[2] }
+            $backup = Join-Path $BackupRoot "$timestamp\$backupRelative"
             New-Item -ItemType Directory -Force -Path (Split-Path $backup -Parent) | Out-Null
             Move-Item -LiteralPath $target -Destination $backup
             Write-Output "backed up: $target -> $backup"

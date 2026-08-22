@@ -22,7 +22,7 @@ fi
 mkdir -p "$tmp/home"
 printf 'old\n' > "$tmp/home/.bashrc"
 HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" bash "$ROOT/install.sh" --apps bash >/dev/null || failures=$((failures + 1))
-[ -L "$tmp/home/.bashrc" ] || { printf 'FAIL: bashrc was not linked\n' >&2; failures=$((failures + 1)); }
+[ -L "$tmp/home/.bashrc" ] || { printf 'bashrc was not linked through HOME expansion\n' >&2; failures=$((failures + 1)); }
 [ -f "$tmp/state/dotfiles/backups"/*/.bashrc ] || { printf 'FAIL: backup missing\n' >&2; failures=$((failures + 1)); }
 
 if HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" bash "$ROOT/install.sh" --apps unknown >/dev/null 2>&1; then

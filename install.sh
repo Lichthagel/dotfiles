@@ -224,6 +224,25 @@ run_module_setup() {
     done
 }
 
+expand_map_target() {
+    local target="$1" variable value prefix suffix
+    while [[ "$target" =~ ^(.*)\$\{([A-Za-z_][A-Za-z0-9_]*)\}(.*)$ ]]; do
+        prefix="${BASH_REMATCH[1]}"
+        variable="${BASH_REMATCH[2]}"
+        suffix="${BASH_REMATCH[3]}"
+        value="${!variable-}"
+        target="$prefix$value$suffix"
+    done
+    while [[ "$target" =~ ^(.*)\$([A-Za-z_][A-Za-z0-9_]*)(.*)$ ]]; do
+        prefix="${BASH_REMATCH[1]}"
+        variable="${BASH_REMATCH[2]}"
+        suffix="${BASH_REMATCH[3]}"
+        value="${!variable-}"
+        target="$prefix$value$suffix"
+    done
+    printf '%s' "$target"
+}
+
 interactive_select() {
     local -a available_modules=() selected_modules=()
     local index=0 key sequence
@@ -328,11 +347,17 @@ for entry in "${MAPS[@]}"; do
     IFS='|' read -r platform_source target_relative <<< "$mapping"
     case "$platform_source" in linux:*) source_relative="${platform_source#linux:}" ;; *) continue ;; esac
     source="$ROOT/modules/$source_relative"
-    target="$HOME/$target_relative"
+    target_relative="$(expand_map_target "$target_relative")"
+    case "$target_relative" in /*) target="$target_relative" ;; *) target="$HOME/$target_relative" ;; esac
     [ -e "$source" ] || { printf 'Missing source: %s\n' "$source" >&2; failures=$((failures + 1)); continue; }
     mkdir -p "$(dirname -- "$target")"
     if [ -e "$target" ] || [ -L "$target" ]; then
-        backup="$BACKUP_ROOT/$timestamp/$target_relative"
+        backup_relative="$target_relative"
+        case "$target" in
+            "$HOME"/*) backup_relative="${target#"$HOME/"}" ;;
+            /*) backup_relative="${target#/}" ;;
+        esac
+        backup="$BACKUP_ROOT/$timestamp/$backup_relative"
         mkdir -p "$(dirname -- "$backup")"
         mv -- "$target" "$backup" || { printf 'failed backup: %s\n' "$target" >&2; failures=$((failures + 1)); continue; }
         printf 'backed up: %s -> %s\n' "$target" "$backup"

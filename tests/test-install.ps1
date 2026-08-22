@@ -4,7 +4,6 @@ $powershellProfile = Get-Content (Join-Path $root 'modules\powershell\profile.ps
 if ($powershellProfile -notmatch '\$PROFILE' -or $powershellProfile -notmatch 'Profile\.d' -or $powershellProfile -notmatch "-Filter '\*\.ps1'") { throw 'PowerShell profile drop-in loader missing' }
 if ($powershellProfile -match 'atuin init') { throw 'PowerShell profile contains Atuin-specific initialization' }
 foreach ($requiredProfileContent in @(
-        'mise activate pwsh',
         'zoxide init powershell',
         'Import-Module posh-git',
         'function TabExpansion2',

@@ -52,12 +52,15 @@ foreach ($entry in $manifest) {
     if ($entry -notmatch '^module=([A-Za-z0-9_-]+)$') { throw "Invalid manifest line: $entry" }
     $name = $Matches[1]
     $config = Join-Path $Root "modules\$name\module.conf"
-    $data = @{ maps = @(); packages = @(); setups = @() }
+    $data = @{ maps = @(); packages = @(); setups = @(); requires = @(); provides = $null }
     foreach ($line in Get-Content $config) {
         if ($line -match '^name=(.+)$') { $data.name = $Matches[1] }
         elseif ($line -match '^description=(.+)$') { $data.description = $Matches[1] }
         elseif ($line -match '^platforms=(.+)$') { $data.platforms = $Matches[1].Split(',') }
         elseif ($line -match '^default=(true|false)$') { $data.default = [bool]::Parse($Matches[1]) }
+        elseif ($line -match '^provides=(apt|dnf|pacman|brew|mise|scoop|winget)$') { $data.provides = $Matches[1] }
+        elseif ($line -match '^provides=') { throw "Invalid module line: $line" }
+        elseif ($line -match '^requires=([A-Za-z0-9_-]+(?:,[A-Za-z0-9_-]+)*)$') { $data.requires = @($Matches[1].Split(',')) }
         elseif ($line -match '^package=([^|]+)\|([^:]+):(.+)$') { $data.packages += [pscustomobject]@{ Logical = $Matches[1]; Manager = $Matches[2]; Name = $Matches[3] } }
         elseif ($line -match '^setup=(linux|windows):(.+)$') { $data.setups += [pscustomobject]@{ Platform = $Matches[1]; Path = $Matches[2] } }
         elseif ($line -match '^map=([^|]+)\|([^|]+)(?:\|requires=([A-Za-z0-9_-]+(?:,[A-Za-z0-9_-]+)*))?$') {
@@ -72,12 +75,64 @@ foreach ($entry in $manifest) {
 $managerPriority = @('winget', 'scoop', 'brew', 'mise')
 $managerValid = @{ windows = @('winget', 'scoop', 'brew', 'mise') }
 function Test-ManagerAvailable($manager) { return [bool](Get-Command $manager -ErrorAction SilentlyContinue) }
+function Get-ProviderModule($manager) {
+    $matches = @($modules.Keys | Where-Object { $modules[$_].provides -eq $manager -and $modules[$_].platforms -contains 'windows' })
+    if ($matches.Count -gt 1) { throw "Multiple modules provide $manager`: $($matches -join ', ')" }
+    if ($matches.Count) { return $matches[0] }
+    return $null
+}
+function Resolve-ModulePhases($selectedNames) {
+    $resolved = [System.Collections.Generic.List[string]]::new()
+    $selectedNames | ForEach-Object { if (-not $resolved.Contains($_)) { $resolved.Add($_) } }
+    $inputs = @($selectedNames | ForEach-Object { $modules[$_].packages })
+    if ($selectedNames | Where-Object { $env:DOTFILES_SECRETS_FILE -or (Test-Path -LiteralPath (Join-Path $Root "secrets\$_.env.age")) }) { $inputs += $dependencies }
+    do {
+        $changed = $false
+        foreach ($moduleName in @($resolved)) {
+            foreach ($required in @($modules[$moduleName].requires)) {
+                if (-not $modules.ContainsKey($required)) { throw "Unknown module dependency: $required" }
+                if ($modules[$required].platforms -notcontains 'windows') { throw "Module is not supported on Windows: $required" }
+                if (-not $resolved.Contains($required)) { $resolved.Add($required); $inputs += $modules[$required].packages; $changed = $true }
+            }
+            foreach ($logical in @($inputs.Logical | Sort-Object -Unique)) {
+                $options = @($inputs | Where-Object Logical -eq $logical)
+                if (@($options | Where-Object { Test-ManagerAvailable $_.Manager }).Count) { continue }
+                foreach ($option in $options) {
+                    if (Test-ManagerAvailable $option.Manager) { continue }
+                    $provider = Get-ProviderModule $option.Manager
+                    if ($provider -and -not $resolved.Contains($provider)) { $resolved.Add($provider); $inputs += $modules[$provider].packages; $changed = $true }
+                }
+            }
+        }
+    } while ($changed)
+    $ordered = [System.Collections.Generic.List[string]]::new()
+    while ($ordered.Count -lt $resolved.Count) {
+        $progress = $false
+        foreach ($moduleName in $resolved) {
+            if ($ordered.Contains($moduleName)) { continue }
+            $ready = $true
+            if (-not $modules[$moduleName].provides) {
+                foreach ($providerName in $resolved) {
+                    if ($modules[$providerName].provides -and -not $ordered.Contains($providerName)) { $ready = $false }
+                }
+            }
+            foreach ($required in @($modules[$moduleName].requires)) { if (-not $ordered.Contains($required)) { $ready = $false } }
+            foreach ($package in @($modules[$moduleName].packages)) {
+                $provider = Get-ProviderModule $package.Manager
+                if ($provider -and $provider -ne $moduleName -and $resolved.Contains($provider) -and -not $ordered.Contains($provider)) { $ready = $false }
+            }
+            if ($ready) { $ordered.Add($moduleName); $progress = $true }
+        }
+        if (-not $progress) { throw 'Module dependency cycle detected.' }
+    }
+    return @($ordered | ForEach-Object { [pscustomobject]@{ Modules = @($_) } })
+}
 function Test-PackageInstalled($manager, $package) {
     switch ($manager) {
         'winget' { return [bool]((& winget list --id $package --exact --accept-source-agreements 2>$null) -match [regex]::Escape($package)) }
         'scoop' { return [bool]((& scoop list 2>$null) -match "(?m)^$([regex]::Escape($package))\s") }
         'brew' { & brew list --versions $package *> $null; return $LASTEXITCODE -eq 0 }
-        'mise' { return [bool]((& mise list 2>$null) -match "(?m)^$([regex]::Escape($package))\s") }
+        'mise' { if ($package -eq 'mise') { return (Test-ManagerAvailable 'mise') }; return [bool]((& mise list 2>$null) -match "(?m)^$([regex]::Escape($package))\s") }
     }
     return $false
 }
@@ -92,7 +147,8 @@ function Get-PackagePlan($selectedNames) {
         $moduleName = $input.Module
         $logicalNames = @($input.Packages.Logical | Sort-Object -Unique)
         foreach ($logical in $logicalNames) {
-            $options = @($input.Packages | Where-Object { $_.Logical -eq $logical -and $_.Manager -in $managerValid.windows -and (Test-ManagerAvailable $_.Manager) })
+            $provider = if ($moduleName -ne '__dependency') { $modules[$moduleName].provides } else { $null }
+            $options = @($input.Packages | Where-Object { $_.Logical -eq $logical -and $_.Manager -in $managerValid.windows -and $_.Manager -ne $provider -and (Test-ManagerAvailable $_.Manager) })
             if (-not $options.Count) { throw "No supported package manager is available for $logical." }
             $chosen = $null
             foreach ($manager in $managerPriority) {
@@ -154,6 +210,36 @@ function Invoke-ModuleSetup($selectedNames) {
             $env:DOTFILES_SECRET_KEYS = $previousKeys
         }
     }
+}
+function Install-ModuleMappings($selectedNames) {
+    $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $failures = 0
+    foreach ($name in $selectedNames) {
+        foreach ($mapping in $modules[$name].maps) {
+            if ($mapping.Source -notmatch '^windows:(.+)$') { continue }
+            if (@($mapping.Requires | Where-Object { $_ -notin $resolvedNames }).Count) { continue }
+            $source = Join-Path $Root "modules\$($Matches[1])"
+            $target = Resolve-MapTarget $mapping.Target
+            if (-not (Test-Path -LiteralPath $source)) { Write-Error "Missing source: $source"; $failures++; continue }
+            $parent = Split-Path $target -Parent
+            New-Item -ItemType Directory -Force -Path $parent | Out-Null
+            if (Test-Path -LiteralPath $target) {
+                $backupRelative = $target.TrimStart('\', '/')
+                $backup = Join-Path $BackupRoot "$timestamp\$backupRelative"
+                New-Item -ItemType Directory -Force -Path (Split-Path $backup -Parent) | Out-Null
+                Move-Item -LiteralPath $target -Destination $backup
+                Write-Output "backed up: $target -> $backup"
+            }
+            try {
+                New-Item -ItemType SymbolicLink -Path $target -Target $source -ErrorAction Stop | Out-Null
+                Write-Output "linked: $target"
+            } catch {
+                Copy-Item -LiteralPath $source -Destination $target -Recurse -Force
+                Write-Output "copied: $target"
+            }
+        }
+    }
+    if ($failures -gt 0) { throw 'One or more mappings failed.' }
 }
 function Install-Package($manager, $package) {
     switch ($manager) {
@@ -224,52 +310,29 @@ foreach ($name in $selectedNames) {
     if ($modules[$name].platforms -notcontains 'windows') { throw "Application not supported on Windows: $name" }
 }
 
-$packagePlan = Get-PackagePlan $selectedNames
-if ($packagePlan.Count) {
-    if (-not $Yes) {
-        $packageResult = Select-PackagePlan $packagePlan
-        if ($packageResult -eq 'cancel') { Write-Output 'Selection cancelled.'; exit 0 }
-        if ($packageResult -eq 'back') {
-            if ($PSBoundParameters.ContainsKey('Apps')) { Write-Output 'Module selection is fixed by -Apps.'; exit 0 }
-            & $PSCommandPath
-            exit $LASTEXITCODE
+$phases = Resolve-ModulePhases $selectedNames
+$resolvedNames = @($phases.Modules | Sort-Object -Unique)
+foreach ($phase in $phases) {
+    $packagePlan = Get-PackagePlan $phase.Modules
+    if ($packagePlan.Count) {
+        if (-not $Yes) {
+            $packageResult = Select-PackagePlan $packagePlan
+            if ($packageResult -eq 'cancel') { Write-Output 'Selection cancelled.'; exit 0 }
+            if ($packageResult -eq 'back') {
+                if ($PSBoundParameters.ContainsKey('Apps')) { Write-Output 'Module selection is fixed by -Apps.'; exit 0 }
+                & $PSCommandPath
+                exit $LASTEXITCODE
+            }
+            $confirmation = Read-Host 'Install these packages? [y/N]'
+            if ($confirmation -notmatch '^(y|yes)$') { Write-Output 'Package installation declined.'; exit 0 }
         }
-        $confirmation = Read-Host 'Install these packages? [y/N]'
-        if ($confirmation -notmatch '^(y|yes)$') { Write-Output 'Package installation declined.'; exit 0 }
+        foreach ($package in $packagePlan) {
+            if ($package.Selected) { Install-Package $package.Manager $package.Name }
+            else { Write-Output "Skipped package $($package.Logical) for module $($package.Module); dotfiles were still installed." }
+        }
     }
-    foreach ($package in $packagePlan) {
-        if ($package.Selected) { Install-Package $package.Manager $package.Name }
-        else { Write-Output "Skipped package $($package.Logical) for module $($package.Module); dotfiles were still installed." }
-    }
+    $env:Path = "$HOME\.local\bin;$env:Path"
+    if ($env:LOCALAPPDATA) { $env:Path = "$(Join-Path $env:LOCALAPPDATA 'mise\bin');$(Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links');$env:Path" }
+    Invoke-ModuleSetup $phase.Modules
+    Install-ModuleMappings $phase.Modules
 }
-
-Invoke-ModuleSetup $selectedNames
-
-$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$failures = 0
-foreach ($name in $selectedNames) {
-    foreach ($mapping in $modules[$name].maps) {
-        if ($mapping.Source -notmatch '^windows:(.+)$') { continue }
-        if (@($mapping.Requires | Where-Object { $_ -notin $selectedNames }).Count) { continue }
-        $source = Join-Path $Root "modules\$($Matches[1])"
-        $target = Resolve-MapTarget $mapping.Target
-        if (-not (Test-Path -LiteralPath $source)) { Write-Error "Missing source: $source"; $failures++; continue }
-        $parent = Split-Path $target -Parent
-        New-Item -ItemType Directory -Force -Path $parent | Out-Null
-        if (Test-Path -LiteralPath $target) {
-            $backupRelative = if ([System.IO.Path]::IsPathRooted($target)) { $target.TrimStart('\', '/') } else { $Matches[2] }
-            $backup = Join-Path $BackupRoot "$timestamp\$backupRelative"
-            New-Item -ItemType Directory -Force -Path (Split-Path $backup -Parent) | Out-Null
-            Move-Item -LiteralPath $target -Destination $backup
-            Write-Output "backed up: $target -> $backup"
-        }
-        try {
-            New-Item -ItemType SymbolicLink -Path $target -Target $source -ErrorAction Stop | Out-Null
-            Write-Output "linked: $target"
-        } catch {
-            Copy-Item -LiteralPath $source -Destination $target -Recurse -Force
-            Write-Output "copied: $target"
-        }
-    }
-}
-if ($failures -gt 0) { exit 1 }

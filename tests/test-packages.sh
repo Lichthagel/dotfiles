@@ -4,6 +4,17 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 failures=0
 grep -Fq 'module=atuin' "$ROOT/modules/manifest.conf" || failures=$((failures + 1))
 grep -Fq 'module=oh-my-posh' "$ROOT/modules/manifest.conf" || failures=$((failures + 1))
+grep -Fq 'module=mise' "$ROOT/modules/manifest.conf" || failures=$((failures + 1))
+grep -Fq 'name=mise' "$ROOT/modules/mise/module.conf" || failures=$((failures + 1))
+grep -Fq 'default=true' "$ROOT/modules/mise/module.conf" || failures=$((failures + 1))
+grep -Fq 'provides=mise' "$ROOT/modules/mise/module.conf" || failures=$((failures + 1))
+if grep -Fq 'mise_required' "$ROOT/install.sh" || grep -Fq 'install_mise' "$ROOT/install.sh"; then failures=$((failures + 1)); fi
+grep -Fq 'package=mise|apt:mise' "$ROOT/modules/mise/module.conf" || failures=$((failures + 1))
+grep -Fq 'package=mise|winget:jdx.mise' "$ROOT/modules/mise/module.conf" || failures=$((failures + 1))
+grep -Fq 'map=linux:mise/bash/10-mise.bash|${HOME}/.config/bashrc.d/10-mise.bash|requires=bash' "$ROOT/modules/mise/module.conf" || failures=$((failures + 1))
+grep -Fq 'map=windows:mise/powershell/10-mise.ps1|$PROFILE\..\Profile.d\10-mise.ps1|requires=powershell' "$ROOT/modules/mise/module.conf" || failures=$((failures + 1))
+grep -Fq 'mise activate bash' "$ROOT/modules/mise/bash/10-mise.bash" || failures=$((failures + 1))
+grep -Fq 'mise activate pwsh' "$ROOT/modules/mise/powershell/10-mise.ps1" || failures=$((failures + 1))
 grep -Fq 'name=atuin' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
 grep -Fq 'description=Atuin shell history' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
 grep -Fq 'platforms=linux,windows' "$ROOT/modules/atuin/module.conf" || failures=$((failures + 1))
@@ -29,6 +40,11 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin" "$tmp/home"
 shell_path="$(command -v bash)"
+for command in awk bash cat chmod cp date dirname env find grep ln mkdir mv rm sort; do
+    command_path="$(type -P "$command" || true)"
+    [ -n "$command_path" ] && ln -s "$command_path" "$tmp/bin/$command"
+done
+[ -e /usr/bin/awk ] && ln -s /usr/bin/awk "$tmp/bin/awk"
 cat > "$tmp/bin/apt" <<'EOF'
 #!/usr/bin/env bash
 exit 0
@@ -47,18 +63,41 @@ cat > "$tmp/bin/run0" <<'EOF'
 EOF
 cat > "$tmp/bin/apt-get" <<'EOF'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >> "${PACKAGE_LOG:?}"
+if [ "$3" = mise ]; then
+    cat > "${MISE_BIN:?}/mise" <<'MISE'
+#!/usr/bin/env bash
+exit 0
+MISE
+    chmod +x "${MISE_BIN:?}/mise"
+fi
 exit 0
 EOF
-chmod +x "$tmp/bin"/*
-PATH="$tmp/bin:$PATH" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" bash "$ROOT/install.sh" --apps git --yes >/dev/null || failures=$((failures + 1))
+chmod +x "$tmp/bin/apt" "$tmp/bin/dpkg-query" "$tmp/bin/sudo" "$tmp/bin/run0" "$tmp/bin/apt-get"
+PATH="$tmp/bin" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" PACKAGE_LOG="$tmp/packages.log" MISE_BIN="$tmp/bin" bash "$ROOT/install.sh" --apps git --yes >/dev/null || failures=$((failures + 1))
 [ -L "$tmp/home/.gitconfig" ] || { printf 'FAIL: package-enabled module was not installed\n' >&2; failures=$((failures + 1)); }
+grep -Fxq 'install -y git' "$tmp/packages.log" || { printf 'FAIL: selected package was not installed\n' >&2; failures=$((failures + 1)); }
+if grep -Fxq 'install -y mise' "$tmp/packages.log"; then
+    printf 'FAIL: mise was bootstrapped for a package with an apt alternative\n' >&2
+    failures=$((failures + 1))
+fi
+
+rm -f "$tmp/bin/mise"
+: > "$tmp/packages-phase.log"
+PATH="$tmp/bin" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state-phase" PACKAGE_LOG="$tmp/packages-phase.log" MISE_BIN="$tmp/bin" bash "$ROOT/install.sh" --apps mise,git --yes >/dev/null || failures=$((failures + 1))
+first=''; second=''
+{ IFS= read -r first; IFS= read -r second; } < "$tmp/packages-phase.log"
+[ "$first" = 'install -y mise' ] && [ "$second" = 'install -y git' ] || { printf 'FAIL: provider phase did not precede dependent package phase\n' >&2; failures=$((failures + 1)); }
+
+PATH="$tmp/bin" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state-mise" PACKAGE_LOG="$tmp/packages.log" MISE_BIN="$tmp/bin" bash "$ROOT/install.sh" --apps mise --yes >/dev/null || failures=$((failures + 1))
+grep -Fxq 'install -y mise' "$tmp/packages.log" || { printf 'FAIL: mise module was not installed through apt\n' >&2; failures=$((failures + 1)); }
 
 cat > "$tmp/bin/apt-get" <<'EOF'
 #!/usr/bin/env bash
 exit 1
 EOF
 rm -f "$tmp/home/.gitconfig"
-if PATH="$tmp/bin:$PATH" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state-failure" bash "$ROOT/install.sh" --apps git --yes >/dev/null 2>&1; then
+if PATH="$tmp/bin" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state-failure" bash "$ROOT/install.sh" --apps git --yes >/dev/null 2>&1; then
     printf 'FAIL: package failure succeeded\n' >&2
     failures=$((failures + 1))
 fi

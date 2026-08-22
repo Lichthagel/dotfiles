@@ -52,10 +52,13 @@ declare -a MODULES=()
 declare -A DESCRIPTIONS=()
 declare -A PLATFORMS=()
 declare -A DEFAULTS=()
+declare -A PROVIDES=()
+declare -A REQUIRES=()
 declare -a MAPS=()
 declare -a PACKAGES=()
 declare -a SETUPS=()
 declare -a DEPENDENCIES=()
+dependencies_added=0
 
 load_module() {
     local module="$1" config="$ROOT/modules/$1/module.conf" line key value
@@ -66,6 +69,15 @@ load_module() {
             description=*) DESCRIPTIONS["$module"]="${line#description=}" ;;
             platforms=*) PLATFORMS["$module"]="${line#platforms=}" ;;
             default=*) DEFAULTS["$module"]="${line#default=}" ;;
+            provides=*)
+                value="${line#provides=}"
+                case "$value" in apt|dnf|pacman|brew|mise|scoop|winget) PROVIDES["$module"]="$value" ;; *) printf 'Invalid manifest line in %s: %s\n' "$config" "$line" >&2; return 1 ;; esac
+                ;;
+            requires=*)
+                value="${line#requires=}"
+                [[ "$value" =~ ^[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$ ]] || { printf 'Invalid manifest line in %s: %s\n' "$config" "$line" >&2; return 1; }
+                REQUIRES["$module"]="$value"
+                ;;
             map=*) MAPS+=("$module|${line#map=}") ;;
             package=*) PACKAGES+=("$module|${line#package=}") ;;
             setup=*) SETUPS+=("$module|${line#setup=}") ;;
@@ -93,12 +105,22 @@ if [ "$list_only" -eq 1 ]; then
     exit 0
 fi
 
+module_in_list() {
+    local needle="$1" item
+    shift
+    for item in "$@"; do [ "$item" = "$needle" ] && return 0; done
+    return 1
+}
+
 is_selected() {
     local needle="$1" item
     IFS=',' read -ra items <<< "$requested_apps"
     for item in "${items[@]}"; do [ "$item" = "$needle" ] && return 0; done
     return 1
 }
+
+module_selected() { module_in_list "$1" "${ACTIVE_MODULES[@]}"; }
+module_resolved() { module_in_list "$1" "${RESOLVED_MODULES[@]}"; }
 
 requirements_met() {
     local requirements="$1" requirement
@@ -110,7 +132,7 @@ requirements_met() {
     [ "${#required_modules[@]}" -gt 0 ] || return 2
     for requirement in "${required_modules[@]}"; do
         [ -n "$requirement" ] || return 2
-        is_selected "$requirement" || return 1
+        module_in_list "$requirement" "${RESOLVED_MODULES[@]}" || return 1
     done
     return 0
 }
@@ -128,13 +150,110 @@ manager_valid() {
 }
 
 manager_priority=(apt dnf pacman winget brew mise scoop)
+provider_for_manager() {
+    local manager="$1" module provider=''
+    for module in "${MODULES[@]}"; do
+        [ "${PROVIDES[$module]:-}" = "$manager" ] || continue
+        case ",${PLATFORMS[$module]}," in *,linux,*) ;; *) continue ;; esac
+        [ -z "$provider" ] || { printf 'Multiple modules provide %s: %s and %s\n' "$manager" "$provider" "$module" >&2; return 2; }
+        provider="$module"
+    done
+    [ -n "$provider" ] && printf '%s' "$provider"
+    return 0
+}
+
+add_resolved_module() {
+    local module="$1"
+    module_resolved "$module" && return 0
+    for known in "${MODULES[@]}"; do
+        [ "$known" = "$module" ] || continue
+        case ",${PLATFORMS[$module]}," in *,linux,*) ;; *) printf 'Module is not supported on Linux: %s\n' "$module" >&2; return 2 ;; esac
+        RESOLVED_MODULES+=("$module")
+        return 0
+    done
+    printf 'Unknown module dependency: %s\n' "$module" >&2
+    return 2
+}
+
+resolve_modules() {
+    RESOLVED_MODULES=()
+    for module in "${selected[@]}"; do module_resolved "$module" || RESOLVED_MODULES+=("$module"); done
+    local changed=1 module entry entry_module declaration logical manager provider requirement selected_module secret_bundle package_available other other_module other_decl other_logical other_manager other_name
+    for selected_module in "${selected[@]}"; do
+        secret_bundle="${DOTFILES_SECRETS_FILE:-$ROOT/secrets/${selected_module}.env.age}"
+        if [ -f "$secret_bundle" ]; then
+            for dependency in "${DEPENDENCIES[@]}"; do PACKAGES+=("__dependency|$dependency"); done
+            break
+        fi
+    done
+    while [ "$changed" -eq 1 ]; do
+        changed=0
+        for module in "${RESOLVED_MODULES[@]}"; do
+            if [ -n "${REQUIRES[$module]:-}" ]; then
+                IFS=',' read -ra requirements <<< "${REQUIRES[$module]}"
+                for requirement in "${requirements[@]}"; do
+                    module_resolved "$requirement" || { add_resolved_module "$requirement" || return $?; changed=1; }
+                done
+            fi
+            for entry in "${PACKAGES[@]}"; do
+                IFS='|' read -r entry_module declaration <<< "$entry"
+                [ "$entry_module" = "$module" ] || continue
+                IFS='|' read -r logical declaration <<< "$declaration"
+                IFS=':' read -r manager name <<< "$declaration"
+                package_available=0
+                for other in "${PACKAGES[@]}"; do
+                    IFS='|' read -r other_module other_decl <<< "$other"
+                    [ "$other_module|${other_decl%%|*}" = "$module|$logical" ] || continue
+                    IFS='|' read -r other_logical other_decl <<< "$other_decl"
+                    IFS=':' read -r other_manager other_name <<< "$other_decl"
+                    manager_available "$other_manager" && package_available=1
+                done
+                [ "$package_available" -eq 1 ] && continue
+                manager_available "$manager" && continue
+                provider="$(provider_for_manager "$manager")" || return $?
+                [ -n "$provider" ] || continue
+                module_resolved "$provider" || { add_resolved_module "$provider" || return $?; changed=1; }
+            done
+        done
+    done
+    MODULE_ORDER=()
+    local remaining=1 candidate dependency ready other
+    while [ "${#MODULE_ORDER[@]}" -lt "${#RESOLVED_MODULES[@]}" ]; do
+        remaining=0
+        for candidate in "${RESOLVED_MODULES[@]}"; do
+            module_in_list "$candidate" "${MODULE_ORDER[@]}" && continue
+            ready=1
+            if [ -z "${PROVIDES[$candidate]:-}" ]; then
+                for provider in "${RESOLVED_MODULES[@]}"; do
+                    [ -n "${PROVIDES[$provider]:-}" ] && module_in_list "$provider" "${MODULE_ORDER[@]}" || { [ -z "${PROVIDES[$provider]:-}" ] || ready=0; }
+                done
+            fi
+            IFS=',' read -ra requirements <<< "${REQUIRES[$candidate]:-}"
+            for dependency in "${requirements[@]}"; do
+                [ -z "$dependency" ] || module_in_list "$dependency" "${MODULE_ORDER[@]}" || ready=0
+            done
+            for entry in "${PACKAGES[@]}"; do
+                IFS='|' read -r entry_module declaration <<< "$entry"
+                [ "$entry_module" = "$candidate" ] || continue
+                IFS='|' read -r logical declaration <<< "$declaration"
+                IFS=':' read -r manager name <<< "$declaration"
+                provider="$(provider_for_manager "$manager")" || return $?
+                [ -n "$provider" ] && [ "$provider" != "$candidate" ] && module_in_list "$provider" "${RESOLVED_MODULES[@]}" && module_in_list "$provider" "${MODULE_ORDER[@]}" || continue
+            done
+            [ "$ready" -eq 1 ] || continue
+            MODULE_ORDER+=("$candidate"); remaining=1
+        done
+        [ "$remaining" -eq 1 ] || { printf 'Module dependency cycle detected.\n' >&2; return 2; }
+    done
+}
+
 package_installed() {
     case "$1" in
         apt) dpkg-query -W -f='${Status}' "$2" 2>/dev/null | grep -q 'install ok installed' ;;
         dnf) rpm -q "$2" >/dev/null 2>&1 ;;
         pacman) pacman -Q "$2" >/dev/null 2>&1 ;;
         brew) brew list --versions "$2" >/dev/null 2>&1 ;;
-        mise) mise list 2>/dev/null | awk '{print $1}' | grep -Fxq "$2" ;;
+        mise) [ "$2" = mise ] && command -v mise >/dev/null 2>&1 || mise list 2>/dev/null | awk '{print $1}' | grep -Fxq "$2" ;;
         winget) winget list --id "$2" --exact --accept-source-agreements 2>/dev/null | grep -Fq "$2" ;;
         scoop) scoop list 2>/dev/null | awk '{print $1}' | grep -Fxq "$2" ;;
         *) return 1 ;;
@@ -144,18 +263,21 @@ package_installed() {
 package_plan() {
     PLAN_KEYS=(); PLAN_MODULES=(); PLAN_NAMES=(); PLAN_MANAGERS=(); PLAN_PACKAGE_NAMES=(); PLAN_OPTIONS=(); PLAN_SELECTED=()
     local entry module declaration logical manager name key chosen options candidate selected_module secret_bundle
-    for selected_module in "${selected[@]}"; do
+    for selected_module in "${ACTIVE_MODULES[@]}"; do
         secret_bundle="${DOTFILES_SECRETS_FILE:-$ROOT/secrets/${selected_module}.env.age}"
-        if [ -f "$secret_bundle" ]; then
+        if [ -f "$secret_bundle" ] && [ "$dependencies_added" -eq 0 ]; then
             for dependency in "${DEPENDENCIES[@]}"; do PACKAGES+=("__dependency|$dependency"); done
+            dependencies_added=1
             break
         fi
     done
     for entry in "${PACKAGES[@]}"; do
         IFS='|' read -r module declaration <<< "$entry"
-        [ "$module" = __dependency ] || is_selected "$module" || continue
+    [ "$module" = __dependency ] || module_selected "$module" || continue
         IFS='|' read -r logical declaration <<< "$declaration"
         IFS=':' read -r manager name <<< "$declaration"
+        if [ "$module" != __dependency ] && [ "${PROVIDES[$module]:-}" = "$manager" ] && manager_available "$manager"; then continue; fi
+        [ "$module" = __dependency ] || [ "${PROVIDES[$module]:-}" != "$manager" ] || continue
         key="$module|$logical"
         found=0
         for candidate in "${PLAN_KEYS[@]}"; do [ "$candidate" = "$key" ] && found=1; done
@@ -220,7 +342,7 @@ run_module_setup() {
     source "$ROOT/lib/secrets.sh"
     for entry in "${SETUPS[@]}"; do
         IFS='|' read -r module declaration <<< "$entry"
-        is_selected "$module" || continue
+        module_selected "$module" || continue
         IFS=':' read -r platform setup_path <<< "$declaration"
         [ "$platform" = linux ] || continue
         secret_source="$ROOT/secrets/${module}.env.age"
@@ -310,6 +432,50 @@ interactive_select() {
     done
 }
 
+install_maps() {
+    local entry module mapping platform_source target_relative requirements requirement_status source_relative source target backup_relative backup timestamp failures=0
+    timestamp="$(date +%Y%m%d-%H%M%S)"
+    for entry in "${MAPS[@]}"; do
+        IFS='|' read -r module mapping <<< "$entry"
+        module_selected "$module" || continue
+        IFS='|' read -r platform_source target_relative requirements <<< "$mapping"
+        requirements_met "$requirements"
+        requirement_status=$?
+        [ "$requirement_status" -eq 0 ] || {
+            [ "$requirement_status" -eq 1 ] && continue
+            printf 'Invalid map requirements for %s: %s\n' "$module" "$requirements" >&2
+            failures=$((failures + 1))
+            continue
+        }
+        case "$platform_source" in linux:*) source_relative="${platform_source#linux:}" ;; *) continue ;; esac
+        source="$ROOT/modules/$source_relative"
+        target_relative="$(expand_map_target "$target_relative")"
+        case "$target_relative" in /*) target="$target_relative" ;; *) target="$HOME/$target_relative" ;; esac
+        [ -e "$source" ] || { printf 'Missing source: %s\n' "$source" >&2; failures=$((failures + 1)); continue; }
+        mkdir -p "$(dirname -- "$target")"
+        if [ -e "$target" ] || [ -L "$target" ]; then
+            backup_relative="$target_relative"
+            case "$target" in
+                "$HOME"/*) backup_relative="${target#"$HOME/"}" ;;
+                /*) backup_relative="${target#/}" ;;
+            esac
+            backup="$BACKUP_ROOT/$timestamp/$backup_relative"
+            mkdir -p "$(dirname -- "$backup")"
+            mv -- "$target" "$backup" || { printf 'failed backup: %s\n' "$target" >&2; failures=$((failures + 1)); continue; }
+            printf 'backed up: %s -> %s\n' "$target" "$backup"
+        fi
+        if ln -s "$source" "$target" 2>/dev/null; then
+            printf 'linked: %s\n' "$target"
+        elif cp -R -- "$source" "$target"; then
+            printf 'copied: %s\n' "$target"
+        else
+            printf 'failed: %s\n' "$target" >&2
+            failures=$((failures + 1))
+        fi
+    done
+    [ "$failures" -eq 0 ]
+}
+
 if [ "$apps_provided" -eq 0 ]; then
     interactive_select || exit $?
     [ "$selection_cancelled" -eq 0 ] || { printf 'Selection cancelled.\n'; exit 0; }
@@ -320,78 +486,37 @@ if [ -z "$requested_apps" ]; then
     exit 0
 fi
 
-while true; do
-    IFS=',' read -ra selected <<< "$requested_apps"
-    for module in "${selected[@]}"; do
+IFS=',' read -ra selected <<< "$requested_apps"
+for module in "${selected[@]}"; do
         is_known=0
         for known in "${MODULES[@]}"; do [ "$known" = "$module" ] && is_known=1; done
         [ "$is_known" -eq 1 ] || { printf 'Unknown application: %s\n' "$module" >&2; exit 2; }
         case ",${PLATFORMS[$module]}," in *,linux,*) ;; *) printf 'Application not supported on Linux: %s\n' "$module" >&2; exit 2 ;; esac
-    done
+done
+resolve_modules || exit $?
+for phase_module in "${MODULE_ORDER[@]}"; do
+    ACTIVE_MODULES=("$phase_module")
     package_plan
     package_status=$?
-    [ "$package_status" -eq 3 ] && [ "$apps_provided" -eq 0 ] && { interactive_select || exit $?; [ "$selection_cancelled" -eq 0 ] || { printf 'Selection cancelled.\n'; exit 0; }; [ -n "$requested_apps" ] || { printf 'No applications selected.\n'; exit 0; }; continue; }
+    [ "$package_status" -eq 3 ] && { [ "$apps_provided" -eq 0 ] && exec "$0"; exit 3; }
     [ "$package_status" -eq 0 ] || exit "$package_status"
-    break
-done
-
-if [ "${#PLAN_NAMES[@]}" -gt 0 ] && [ "$yes_mode" -eq 0 ]; then
-    printf 'Install these packages? [y/N]: '
-    IFS= read -r package_confirmation
-    case "$package_confirmation" in
-        y|Y|yes|YES) ;;
-        *) printf 'Package installation declined.\n'; exit 0 ;;
-    esac
-fi
-
-for i in "${!PLAN_NAMES[@]}"; do
-    if [ "${PLAN_SELECTED[$i]}" -eq 1 ]; then
-        install_package "${PLAN_MANAGERS[$i]}" "${PLAN_PACKAGE_NAMES[$i]}" || { printf 'Package installation failed: %s\n' "${PLAN_NAMES[$i]}" >&2; exit 1; }
-    else
-        printf 'Skipped package %s for module %s; dotfiles were still installed.\n' "${PLAN_NAMES[$i]}" "${PLAN_MODULES[$i]}"
-    fi
-done
-
-run_module_setup || exit 1
-
-timestamp="$(date +%Y%m%d-%H%M%S)"
-failures=0
-for entry in "${MAPS[@]}"; do
-    IFS='|' read -r module mapping <<< "$entry"
-    is_selected "$module" || continue
-    IFS='|' read -r platform_source target_relative requirements <<< "$mapping"
-    requirements_met "$requirements"
-    requirement_status=$?
-    [ "$requirement_status" -eq 0 ] || {
-        [ "$requirement_status" -eq 1 ] && continue
-        printf 'Invalid map requirements for %s: %s\n' "$module" "$requirements" >&2
-        failures=$((failures + 1))
-        continue
-    }
-    case "$platform_source" in linux:*) source_relative="${platform_source#linux:}" ;; *) continue ;; esac
-    source="$ROOT/modules/$source_relative"
-    target_relative="$(expand_map_target "$target_relative")"
-    case "$target_relative" in /*) target="$target_relative" ;; *) target="$HOME/$target_relative" ;; esac
-    [ -e "$source" ] || { printf 'Missing source: %s\n' "$source" >&2; failures=$((failures + 1)); continue; }
-    mkdir -p "$(dirname -- "$target")"
-    if [ -e "$target" ] || [ -L "$target" ]; then
-        backup_relative="$target_relative"
-        case "$target" in
-            "$HOME"/*) backup_relative="${target#"$HOME/"}" ;;
-            /*) backup_relative="${target#/}" ;;
+    if [ "${#PLAN_NAMES[@]}" -gt 0 ] && [ "$yes_mode" -eq 0 ]; then
+        printf 'Install these packages? [y/N]: '
+        IFS= read -r package_confirmation
+        case "$package_confirmation" in
+            y|Y|yes|YES) ;;
+            *) printf 'Package installation declined.\n'; exit 0 ;;
         esac
-        backup="$BACKUP_ROOT/$timestamp/$backup_relative"
-        mkdir -p "$(dirname -- "$backup")"
-        mv -- "$target" "$backup" || { printf 'failed backup: %s\n' "$target" >&2; failures=$((failures + 1)); continue; }
-        printf 'backed up: %s -> %s\n' "$target" "$backup"
     fi
-    if ln -s "$source" "$target" 2>/dev/null; then
-        printf 'linked: %s\n' "$target"
-    elif cp -R -- "$source" "$target"; then
-        printf 'copied: %s\n' "$target"
-    else
-        printf 'failed: %s\n' "$target" >&2
-        failures=$((failures + 1))
-    fi
+    for i in "${!PLAN_NAMES[@]}"; do
+        if [ "${PLAN_SELECTED[$i]}" -eq 1 ]; then
+            install_package "${PLAN_MANAGERS[$i]}" "${PLAN_PACKAGE_NAMES[$i]}" || { printf 'Package installation failed: %s\n' "${PLAN_NAMES[$i]}" >&2; exit 1; }
+        else
+            printf 'Skipped package %s for module %s; dotfiles were still installed.\n' "${PLAN_NAMES[$i]}" "${PLAN_MODULES[$i]}"
+        fi
+    done
+    hash -r
+    run_module_setup || exit 1
+    install_maps || exit 1
 done
-exit "$([ "$failures" -eq 0 ] && echo 0 || echo 1)"
+exit 0

@@ -3,6 +3,16 @@ $root = Split-Path $PSScriptRoot -Parent
 $manifest = Get-Content (Join-Path $root 'modules\manifest.conf')
 if ('module=atuin' -notin $manifest) { throw 'Atuin module registration missing' }
 if ('module=oh-my-posh' -notin $manifest) { throw 'oh-my-posh module registration missing' }
+if ('module=mise' -notin $manifest) { throw 'mise module registration missing' }
+$miseModule = Get-Content (Join-Path $root 'modules\mise\module.conf')
+if ('name=mise' -notin $miseModule) { throw 'mise module name missing' }
+if ('default=true' -notin $miseModule) { throw 'mise module must be enabled by default' }
+if ('provides=mise' -notin $miseModule) { throw 'mise provider declaration missing' }
+if ('package=mise|winget:jdx.mise' -notin $miseModule) { throw 'mise WinGet package declaration missing' }
+if ('map=windows:mise/powershell/10-mise.ps1|$PROFILE\..\Profile.d\10-mise.ps1|requires=powershell' -notin $miseModule) { throw 'mise PowerShell integration declaration missing' }
+if ((Get-Content (Join-Path $root 'modules\mise\powershell\10-mise.ps1') -Raw) -notmatch 'mise activate pwsh') { throw 'mise PowerShell activation missing' }
+if ((Get-Content (Join-Path $root 'modules\mise\bash\10-mise.bash') -Raw) -notmatch 'mise activate bash') { throw 'mise Bash activation missing' }
+if ((Get-Content (Join-Path $root 'modules\powershell\profile.ps1') -Raw) -match 'mise activate') { throw 'mise activation remains in the general PowerShell profile' }
 $atuinModule = Get-Content (Join-Path $root 'modules\atuin\module.conf')
 if ('name=atuin' -notin $atuinModule) { throw 'Atuin module name missing' }
 if ('default=false' -notin $atuinModule) { throw 'Atuin must be opt-in' }
@@ -32,4 +42,8 @@ $dependencies = Get-Content (Join-Path $root 'modules\dependencies.conf')
 if ('dependency=age|winget:FiloSottile.age' -notin $dependencies) { throw 'age WinGet dependency missing' }
 if ([string]::Join("`n", (Get-Content (Join-Path $root 'lib\secrets.ps1'))) -notmatch 'Read-Host.*Age identity') { throw 'PowerShell age identity prompt missing' }
 if ([string]::Join("`n", (Get-Content (Join-Path $root 'install.ps1'))) -notmatch '-Yes') { throw 'Yes option missing' }
+$installer = [string]::Join("`n", (Get-Content (Join-Path $root 'install.ps1')))
+if ($installer -match 'Install-Mise|https://mise\.run') { throw 'mise-specific bootstrap logic remains in the installer' }
+if ($installer -notmatch 'Resolve-ModulePhases') { throw 'generic module phase resolver missing' }
+if ($installer -match 'return if') { throw 'PowerShell provider resolver uses invalid return-if syntax' }
 Write-Output 'PowerShell package tests passed'

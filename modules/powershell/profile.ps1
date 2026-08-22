@@ -8,7 +8,6 @@ if (Test-Path -LiteralPath $profileDirectory) {
         ForEach-Object { . $_.FullName }
 }
 
-mise activate pwsh | Out-String | Invoke-Expression
 Invoke-Expression (& { (zoxide init powershell | Out-String) })
 Import-Module posh-git
 

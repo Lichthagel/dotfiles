@@ -4,6 +4,15 @@ $manifest = Get-Content (Join-Path $root 'modules\manifest.conf')
 if ('module=atuin' -notin $manifest) { throw 'Atuin module registration missing' }
 if ('module=oh-my-posh' -notin $manifest) { throw 'oh-my-posh module registration missing' }
 if ('module=mise' -notin $manifest) { throw 'mise module registration missing' }
+if ('module=brew' -notin $manifest) { throw 'brew module registration missing' }
+$brewModule = Get-Content (Join-Path $root 'modules\brew\module.conf')
+if ('name=brew' -notin $brewModule) { throw 'brew module name missing' }
+if ('platforms=linux' -notin $brewModule) { throw 'brew module must be Linux-only' }
+if ('default=false' -notin $brewModule) { throw 'brew module must be opt-in' }
+if ('provides=brew' -notin $brewModule) { throw 'brew provider declaration missing' }
+if ('setup=linux:brew/setup.sh' -notin $brewModule) { throw 'brew setup declaration missing' }
+if ((Get-Content (Join-Path $root 'modules\brew\setup.sh') -Raw) -notmatch 'brew shellenv') { throw 'brew setup script missing shellenv configuration' }
+if ((Get-Content (Join-Path $root 'modules\brew\bash\05-brew.bash') -Raw) -notmatch 'brew shellenv') { throw 'brew Bash integration missing' }
 $miseModule = Get-Content (Join-Path $root 'modules\mise\module.conf')
 if ('name=mise' -notin $miseModule) { throw 'mise module name missing' }
 if ('default=true' -notin $miseModule) { throw 'mise module must be enabled by default' }

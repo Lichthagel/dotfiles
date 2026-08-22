@@ -1,8 +1,9 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
+. (Join-Path $PSScriptRoot 'test-helpers.ps1')
 $powershellProfile = Get-Content (Join-Path $root 'modules\powershell\profile.ps1') -Raw
-if ($powershellProfile -notmatch '\$PROFILE' -or $powershellProfile -notmatch 'Profile\.d' -or $powershellProfile -notmatch "-Filter '\*\.ps1'") { throw 'PowerShell profile drop-in loader missing' }
-if ($powershellProfile -match 'atuin init') { throw 'PowerShell profile contains Atuin-specific initialization' }
+Assert-True ($powershellProfile -match '\$PROFILE' -and $powershellProfile -match 'Profile\.d' -and $powershellProfile -match "-Filter '\*\.ps1'") 'PowerShell profile drop-in loader missing'
+Assert-NotContains $powershellProfile 'atuin init'
 foreach ($requiredProfileContent in @(
         'zoxide init powershell',
         'Import-Module posh-git',
@@ -21,7 +22,7 @@ foreach ($requiredProfileContent in @(
         'function Edit-Path',
         'Microsoft.WinGet.CommandNotFound'
     )) {
-    if ($powershellProfile -notmatch [regex]::Escape($requiredProfileContent)) { throw "PowerShell profile content missing: $requiredProfileContent" }
+    Assert-Contains $powershellProfile $requiredProfileContent
 }
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ('dotfiles-test-' + [guid]::NewGuid())
 $testHome = Join-Path $temp 'home'
@@ -30,20 +31,23 @@ $profile = Join-Path $temp 'profile-drive\Documents\PowerShell\Microsoft.PowerSh
 New-Item -ItemType Directory -Force -Path $testHome | Out-Null
 $env:LOCALAPPDATA = $local
 $env:DOTFILES_HOME = $testHome
-if ('default=true' -notin (Get-Content (Join-Path $root 'modules\git\module.conf'))) { throw 'git default missing' }
-if ('default=true' -notin (Get-Content (Join-Path $root 'modules\powershell\module.conf'))) { throw 'powershell default missing' }
-if ([string]::Join("`n", (Get-Content (Join-Path $root 'install.ps1'))) -notmatch "Escape|Q") { throw 'PowerShell cancellation handling missing' }
+Assert-True ('default=true' -in (Get-Content (Join-Path $root 'modules\git\module.conf'))) 'git default missing'
+Assert-True ('default=true' -in (Get-Content (Join-Path $root 'modules\powershell\module.conf'))) 'powershell default missing'
+Assert-True ([string]::Join("`n", (Get-Content (Join-Path $root 'install.ps1'))) -match 'Escape|Q') 'PowerShell cancellation handling missing'
 $output = & (Join-Path $root 'install.ps1') -List | Out-String
-if ($output -notmatch 'git - Git configuration' -or $output -notmatch 'powershell - PowerShell profile') { throw 'list output missing module' }
-if ($output -notmatch 'oh-my-posh - Oh My Posh prompt') { throw 'list output missing oh-my-posh module' }
-if ($output -match '(?m)^shell -') { throw 'legacy shell module is still listed' }
+Assert-Contains $output 'git - Git configuration'
+Assert-Contains $output 'powershell - PowerShell profile'
+Assert-Contains $output 'oh-my-posh - Oh My Posh prompt'
+Assert-True ($output -notmatch '(?m)^shell -') 'legacy shell module is still listed'
+$helpOutput = & (Join-Path $root 'install.ps1') -Help | Out-String
+Assert-Contains $helpOutput 'Usage: install.ps1'
 & pwsh -NoProfile -Command "`$PROFILE = '$profile'; & '$root\install.ps1' -Apps powershell" | Out-Null
 $target = $profile
-if (-not (Test-Path $target)) { throw 'PowerShell profile was not installed' }
+Assert-FileExists $target
 $unknownSucceeded = $true
 try { & (Join-Path $root 'install.ps1') -Apps unknown 2>$null } catch { $unknownSucceeded = $false }
-if ($unknownSucceeded) { throw 'unknown module succeeded' }
-if ((& (Join-Path $root 'install.ps1') -Apps '') -notmatch 'No applications selected') { throw 'empty app selection was not a no-op' }
+Assert-True (-not $unknownSucceeded) 'unknown module succeeded'
+Assert-Contains ((& (Join-Path $root 'install.ps1') -Apps '') -join "`n") 'No applications selected'
 Remove-Item -LiteralPath $temp -Recurse -Force
 $env:DOTFILES_HOME = $null
 Write-Output 'PowerShell installer tests passed'

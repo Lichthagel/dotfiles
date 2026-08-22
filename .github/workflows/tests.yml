@@ -1,0 +1,56 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  bash:
+    name: Bash tests and ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+
+      - name: Check Bash syntax
+        run: |
+          find . -type f -name '*.sh' -print0 \
+            | xargs -0 -n1 bash -n
+
+      - name: Run Bash tests
+        run: |
+          bash tests/test-install.sh
+          bash tests/test-packages.sh
+          bash tests/test-secrets.sh
+
+      - name: Run ShellCheck
+        run: |
+          find . -type f -name '*.sh' -print0 \
+            | xargs -0 shellcheck --severity=error
+
+  powershell:
+    name: PowerShell tests and PSScriptAnalyzer
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -AllowClobber
+
+      - name: Run PowerShell tests
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\tests\test-install.ps1
+          pwsh -NoProfile -File .\tests\test-packages.ps1
+
+      - name: Run PSScriptAnalyzer
+        shell: pwsh
+        run: Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error -EnableExit

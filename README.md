@@ -36,6 +36,24 @@ The `DOTFILES_REPO_URL` value is required for piped execution because the script
 - `--list` / `-List` lists supported modules.
 - `--help` / `-Help` prints usage.
 
+## Testing
+
+The repository has isolated Bash and PowerShell installer, package, and secret tests. Run the full local matrix from a checkout with:
+
+```sh
+bash -n install.sh
+bash tests/test-install.sh
+bash tests/test-packages.sh
+bash tests/test-secrets.sh
+```
+
+```powershell
+pwsh -NoProfile -File .\tests\test-install.ps1
+pwsh -NoProfile -File .\tests\test-packages.ps1
+```
+
+CI additionally runs ShellCheck and PSScriptAnalyzer. See `CONTRIBUTING.md` for test isolation rules and module coverage expectations.
+
 The initial modules are `git`, `bash`, `powershell`, `atuin`, and `oh-my-posh`. `atuin` and `oh-my-posh` are opt-in. Existing targets are moved into a timestamped backup directory before installation. Symlinks are preferred; Windows falls back to copying when link creation is unavailable.
 
 ### Oh My Posh

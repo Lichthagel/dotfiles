@@ -3,6 +3,27 @@ $root = Split-Path $PSScriptRoot -Parent
 $powershellProfile = Get-Content (Join-Path $root 'modules\powershell\profile.ps1') -Raw
 if ($powershellProfile -notmatch '\$PROFILE' -or $powershellProfile -notmatch 'Profile\.d' -or $powershellProfile -notmatch "-Filter '\*\.ps1'") { throw 'PowerShell profile drop-in loader missing' }
 if ($powershellProfile -match 'atuin init') { throw 'PowerShell profile contains Atuin-specific initialization' }
+foreach ($requiredProfileContent in @(
+        'mise activate pwsh',
+        'zoxide init powershell',
+        'Import-Module posh-git',
+        'function TabExpansion2',
+        'CommandCompletion]::CompleteInput',
+        'function l',
+        'function la',
+        'function ll',
+        'function lla',
+        'Set-Alias -Name ls',
+        'function lt',
+        'function zh',
+        'function Update-Software',
+        'uv generate-shell-completion powershell',
+        'uvx --generate-shell-completion powershell',
+        'function Edit-Path',
+        'Microsoft.WinGet.CommandNotFound'
+    )) {
+    if ($powershellProfile -notmatch [regex]::Escape($requiredProfileContent)) { throw "PowerShell profile content missing: $requiredProfileContent" }
+}
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ('dotfiles-test-' + [guid]::NewGuid())
 $testHome = Join-Path $temp 'home'
 $local = Join-Path $temp 'local'

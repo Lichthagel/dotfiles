@@ -1,0 +1,8 @@
+[user]
+	# Set these values in your local Git config or edit this file after setup.
+	# name = Your Name
+	# email = you@example.com
+[init]
+	defaultBranch = main
+[core]
+	autocrlf = input

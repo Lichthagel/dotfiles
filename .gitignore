@@ -1,0 +1,6 @@
+# Local installer state
+.dotfiles-cache/
+
+# Editor and operating-system noise
+.DS_Store
+Thumbs.db

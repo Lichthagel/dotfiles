@@ -1,0 +1,134 @@
+[CmdletBinding()]
+param(
+    [string]$Apps,
+    [switch]$List,
+    [switch]$Help
+)
+
+$ErrorActionPreference = 'Stop'
+$Root = $PSScriptRoot
+$DotfilesHome = if ($env:DOTFILES_HOME) { $env:DOTFILES_HOME } else { $HOME }
+$BackupRoot = Join-Path ($env:LOCALAPPDATA ?? (Join-Path $DotfilesHome 'AppData\Local')) 'dotfiles\backups'
+
+if (-not (Test-Path (Join-Path $Root 'modules\manifest.conf'))) {
+    if (-not $env:DOTFILES_REPO_URL) { throw 'Set DOTFILES_REPO_URL when running install.ps1 from a pipe.' }
+    $bootstrapDir = Join-Path ([System.IO.Path]::GetTempPath()) ('dotfiles-' + [guid]::NewGuid())
+    New-Item -ItemType Directory -Force -Path $bootstrapDir | Out-Null
+    try {
+        $archive = Join-Path $bootstrapDir 'repo.zip'
+        Invoke-WebRequest -Uri "$($env:DOTFILES_REPO_URL)/archive/refs/heads/main.zip" -OutFile $archive
+        Expand-Archive -LiteralPath $archive -DestinationPath $bootstrapDir
+        $extracted = Get-ChildItem -LiteralPath $bootstrapDir -Directory | Where-Object { $_.Name -ne 'repo.zip' } | Select-Object -First 1
+        if (-not $extracted) { throw 'Repository archive did not contain a root directory.' }
+        $forwarded = @{}
+        if ($Apps) { $forwarded.Apps = $Apps }
+        if ($List) { $forwarded.List = $true }
+        if ($Help) { $forwarded.Help = $true }
+        & (Join-Path $extracted.FullName 'install.ps1') @forwarded
+        exit $LASTEXITCODE
+    } finally {
+        Remove-Item -LiteralPath $bootstrapDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+if ($Help) {
+    Write-Output 'Usage: install.ps1 [-Apps name1,name2] [-List] [-Help]'
+    Write-Output 'Install selected dotfiles modules. Without -Apps, selection is interactive.'
+    exit 0
+}
+
+$modules = @{}
+$manifest = Get-Content (Join-Path $Root 'modules\manifest.conf')
+foreach ($entry in $manifest) {
+    if ([string]::IsNullOrWhiteSpace($entry) -or $entry.StartsWith('#')) { continue }
+    if ($entry -notmatch '^module=([A-Za-z0-9_-]+)$') { throw "Invalid manifest line: $entry" }
+    $name = $Matches[1]
+    $config = Join-Path $Root "modules\$name\module.conf"
+    $data = @{ maps = @() }
+    foreach ($line in Get-Content $config) {
+        if ($line -match '^name=(.+)$') { $data.name = $Matches[1] }
+        elseif ($line -match '^description=(.+)$') { $data.description = $Matches[1] }
+        elseif ($line -match '^platforms=(.+)$') { $data.platforms = $Matches[1].Split(',') }
+        elseif ($line -match '^default=(true|false)$') { $data.default = [bool]::Parse($Matches[1]) }
+        elseif ($line -match '^map=(.+)$') { $data.maps += $Matches[1] }
+        elseif (-not [string]::IsNullOrWhiteSpace($line) -and -not $line.StartsWith('#')) { throw "Invalid module line: $line" }
+    }
+    $modules[$name] = $data
+}
+
+if ($List) {
+    foreach ($name in $modules.Keys | Sort-Object) {
+        if ($modules[$name].platforms -contains 'windows') { Write-Output "$name - $($modules[$name].description)" }
+    }
+    exit 0
+}
+
+if (-not $PSBoundParameters.ContainsKey('Apps')) {
+    $available = @($modules.Keys | Where-Object { $modules[$_].platforms -contains 'windows' } | Sort-Object)
+    if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) { throw 'Interactive selection requires a terminal. Use -Apps for noninteractive setup.' }
+    $selected = @($available | Where-Object { $modules[$_].default })
+    $cursor = 0
+    $cancelled = $false
+    try {
+        while ($true) {
+            Clear-Host
+            Write-Output 'Select applications (Up/Down to move, Space to toggle, Enter to confirm):'
+            for ($i = 0; $i -lt $available.Count; $i++) {
+                $marker = if ($selected -contains $available[$i]) { 'x' } else { ' ' }
+                $pointer = if ($i -eq $cursor) { '>' } else { ' ' }
+                Write-Output "$pointer [$marker] $($available[$i]) - $($modules[$available[$i]].description)"
+            }
+            $key = [Console]::ReadKey($true)
+            switch ($key.Key) {
+                'UpArrow' { if ($cursor -gt 0) { $cursor-- } }
+                'DownArrow' { if ($cursor -lt ($available.Count - 1)) { $cursor++ } }
+                'Spacebar' {
+                    if ($selected -contains $available[$cursor]) { $selected = @($selected | Where-Object { $_ -ne $available[$cursor] }) }
+                    else { $selected += $available[$cursor] }
+                }
+                'Enter' { $Apps = $selected -join ','; break }
+                'Escape' { $cancelled = $true; break }
+                'Q' { $cancelled = $true; break }
+            }
+            if ($key.Key -eq 'Enter' -or $cancelled) { break }
+        }
+    } finally {
+        Clear-Host
+    }
+    if ($cancelled) { Write-Output 'Selection cancelled.'; exit 0 }
+}
+
+if ([string]::IsNullOrWhiteSpace($Apps)) { Write-Output 'No applications selected.'; exit 0 }
+
+$selectedNames = @($Apps.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+foreach ($name in $selectedNames) {
+    if (-not $modules.ContainsKey($name)) { throw "Unknown application: $name" }
+    if ($modules[$name].platforms -notcontains 'windows') { throw "Application not supported on Windows: $name" }
+}
+
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$failures = 0
+foreach ($name in $selectedNames) {
+    foreach ($mapping in $modules[$name].maps) {
+        if ($mapping -notmatch '^windows:(.+)\|(.+)$') { continue }
+        $source = Join-Path $Root "modules\$($Matches[1])"
+        $target = Join-Path $DotfilesHome $Matches[2]
+        if (-not (Test-Path -LiteralPath $source)) { Write-Error "Missing source: $source"; $failures++; continue }
+        $parent = Split-Path $target -Parent
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+        if (Test-Path -LiteralPath $target) {
+            $backup = Join-Path $BackupRoot "$timestamp\$($Matches[2])"
+            New-Item -ItemType Directory -Force -Path (Split-Path $backup -Parent) | Out-Null
+            Move-Item -LiteralPath $target -Destination $backup
+            Write-Output "backed up: $target -> $backup"
+        }
+        try {
+            New-Item -ItemType SymbolicLink -Path $target -Target $source -ErrorAction Stop | Out-Null
+            Write-Output "linked: $target"
+        } catch {
+            Copy-Item -LiteralPath $source -Destination $target -Recurse -Force
+            Write-Output "copied: $target"
+        }
+    }
+}
+if ($failures -gt 0) { exit 1 }

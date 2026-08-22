@@ -1,0 +1,2 @@
+# User shell additions belong here.
+export EDITOR="${EDITOR:-vi}"

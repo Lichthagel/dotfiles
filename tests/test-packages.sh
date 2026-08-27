@@ -93,6 +93,7 @@ cat > "$opencode_fixture/bin/run0" <<'EOF'
 EOF
 cat > "$opencode_fixture/bin/age" <<'EOF'
 #!/usr/bin/env bash
+printf 'setup-start\n' >> "$OPENCODE_FIXTURE_LOG"
 printf 'OPENROUTER_API_KEY=test-openrouter\nAZURE_API_KEY=test-azure\nAZURE_RESOURCE_NAME=test-resource\nDIGITALOCEAN_ACCESS_TOKEN=test-digitalocean\n'
 EOF
 cat > "$opencode_fixture/bin/curl" <<'EOF'
@@ -135,7 +136,7 @@ PATH="$opencode_fixture/bin" HOME="$opencode_fixture/home" XDG_CONFIG_HOME="$ope
 grep -Fxq 'package:anomalyco/tap/opencode' "$opencode_log" || { printf 'FAIL: preferred OpenCode package was not installed\n' >&2; failures=$((failures + 1)); }
 grep -Fxq 'package:jq' "$opencode_log" || { printf 'FAIL: jq package was not installed\n' >&2; failures=$((failures + 1)); }
 [ -x "$opencode_fixture/bin/jq" ] || { printf 'FAIL: jq was unavailable to setup\n' >&2; failures=$((failures + 1)); }
-[ "$(grep -n '^package:' "$opencode_log" | tail -n 1 | cut -d: -f1)" -lt "$(grep -n '^setup:jq' "$opencode_log" | head -n 1 | cut -d: -f1)" ] || { printf 'FAIL: setup ran before package installation completed\n' >&2; failures=$((failures + 1)); }
+[ "$(grep -n '^package:' "$opencode_log" | tail -n 1 | cut -d: -f1)" -lt "$(grep -n '^setup-start$' "$opencode_log" | head -n 1 | cut -d: -f1)" ] || { printf 'FAIL: setup ran before package installation completed\n' >&2; failures=$((failures + 1)); }
 rm -rf "$opencode_fixture"
 
 tmp="$(mktemp -d)"

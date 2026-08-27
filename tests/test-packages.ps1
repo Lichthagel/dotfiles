@@ -67,4 +67,97 @@ if ($installer -match 'return if') { throw 'PowerShell provider resolver uses in
 $opencodeModule = Get-Content (Join-Path $root 'modules\opencode\module.conf')
 if ('setup=windows:opencode/setup.ps1' -notin $opencodeModule) { throw 'OpenCode setup declaration was not discovered' }
 if ($installer -match '(?i)opencode|openrouter|azure_api_key|digitalocean|theme|mcp|plugin') { throw 'PowerShell installer contains OpenCode-specific setup logic' }
+
+$fixture = Join-Path ([System.IO.Path]::GetTempPath()) ('dotfiles-opencode-package-' + [guid]::NewGuid())
+$fixtureBin = Join-Path $fixture 'bin'
+$fixtureAppData = Join-Path $fixture 'appdata'
+$fixtureLocalAppData = Join-Path $fixture 'localappdata'
+$fixtureLog = Join-Path $fixture 'events.log'
+$fixtureSecrets = Join-Path $fixture 'opencode.env.age'
+$fixtureThemes = Join-Path $fixture 'themes'
+$oldPath = $env:Path
+$oldAppData = $env:APPDATA
+$oldLocalAppData = $env:LOCALAPPDATA
+$oldDotfilesHome = $env:DOTFILES_HOME
+$oldSecretFile = $env:DOTFILES_SECRETS_FILE
+$oldAgeIdentity = $env:AGE_IDENTITY
+$oldThemeApi = $env:OPENCODE_THEME_API_URL
+$oldThemeRaw = $env:OPENCODE_THEME_RAW_URL
+try {
+    New-Item -ItemType Directory -Force -Path $fixtureBin, $fixtureAppData, $fixtureLocalAppData, (Join-Path $fixtureThemes 'themes') | Out-Null
+    @'
+@echo off
+if "%1"=="list" (
+    if exist "%SCOOP_FIXTURE_BIN%\opencode.cmd" echo opencode 1.0
+    exit /b 0
+)
+if "%1"=="install" (
+    echo package-start:%2>>"%SCOOP_FIXTURE_LOG%"
+    if "%2"=="opencode" copy /y "%SCOOP_FIXTURE_BIN%\opencode-template.cmd" "%SCOOP_FIXTURE_BIN%\opencode.cmd" >nul
+    echo package-complete:%2>>"%SCOOP_FIXTURE_LOG%"
+    exit /b 0
+)
+exit /b 1
+'@ | Set-Content -LiteralPath (Join-Path $fixtureBin 'scoop.cmd') -Encoding ascii
+    '@echo off`r`nexit /b 0' | Set-Content -LiteralPath (Join-Path $fixtureBin 'opencode-template.cmd') -Encoding ascii
+    @'
+@echo off
+echo setup-start>>"%SCOOP_FIXTURE_LOG%"
+echo OPENROUTER_API_KEY=test-openrouter
+echo AZURE_API_KEY=test-azure
+echo AZURE_RESOURCE_NAME=test-resource
+echo DIGITALOCEAN_ACCESS_TOKEN=test-digitalocean
+'@ | Set-Content -LiteralPath (Join-Path $fixtureBin 'age.cmd') -Encoding ascii
+    '{"tree":[{"path":"themes/test.json","type":"blob"}]}' | Set-Content -LiteralPath (Join-Path $fixtureThemes 'tree.json') -Encoding utf8
+    '{"name":"test theme"}' | Set-Content -LiteralPath (Join-Path $fixtureThemes 'themes\test.json') -Encoding utf8
+    'encrypted fixture' | Set-Content -LiteralPath $fixtureSecrets -Encoding ascii
+
+    $env:Path = "$fixtureBin;$oldPath"
+    $env:SCOOP_FIXTURE_BIN = $fixtureBin
+    $env:SCOOP_FIXTURE_LOG = $fixtureLog
+    $env:APPDATA = $fixtureAppData
+    $env:LOCALAPPDATA = $fixtureLocalAppData
+    $env:DOTFILES_HOME = Join-Path $fixture 'home'
+    $env:DOTFILES_SECRETS_FILE = $fixtureSecrets
+    $env:AGE_IDENTITY = 'fixture-age-key'
+    $env:OPENCODE_THEME_API_URL = ([Uri]::new((Join-Path $fixtureThemes 'tree.json'))).AbsoluteUri
+    $env:OPENCODE_THEME_RAW_URL = ([Uri]::new($fixtureThemes)).AbsoluteUri.TrimEnd('/')
+    function scoop { & (Join-Path $env:SCOOP_FIXTURE_BIN 'scoop.cmd') @args }
+    function age { & (Join-Path $env:SCOOP_FIXTURE_BIN 'age.cmd') @args }
+
+    # An existing OpenCode command must suppress its package install.
+    Copy-Item (Join-Path $fixtureBin 'opencode-template.cmd') (Join-Path $fixtureBin 'opencode.cmd')
+    New-Item -ItemType Directory -Force -Path (Join-Path $fixtureAppData 'opencode') | Out-Null
+    '{"plugin":[]}' | Set-Content -LiteralPath (Join-Path $fixtureAppData 'opencode\opencode.json') -Encoding utf8
+    Set-Content -LiteralPath $fixtureLog -Value '' -Encoding ascii
+    & (Join-Path $root 'install.ps1') -Apps opencode -Yes
+    if (Select-String -LiteralPath $fixtureLog -Pattern '^package-(start|complete):' -Quiet) { throw 'Existing OpenCode command triggered package installation' }
+    if (-not (Test-Path (Join-Path $fixtureAppData 'opencode\opencode.json'))) { throw 'Windows OpenCode setup declaration was not executed' }
+
+    # With both commands missing, scoop is the preferred available manager.
+    Remove-Item -LiteralPath (Join-Path $fixtureBin 'opencode.cmd')
+    Set-Content -LiteralPath $fixtureLog -Value '' -Encoding ascii
+    Remove-Item -LiteralPath $fixtureAppData -Recurse -Force
+    New-Item -ItemType Directory -Force -Path $fixtureAppData | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $fixtureAppData 'opencode') | Out-Null
+    '{"plugin":[]}' | Set-Content -LiteralPath (Join-Path $fixtureAppData 'opencode\opencode.json') -Encoding utf8
+    & (Join-Path $root 'install.ps1') -Apps opencode -Yes
+    $events = @(Get-Content -LiteralPath $fixtureLog)
+    if ('package-complete:opencode' -notin $events) { throw 'Preferred OpenCode package was not installed' }
+    $setupIndex = [array]::IndexOf($events, 'setup-start')
+    $packageIndexes = @($events | ForEach-Object { [array]::IndexOf($events, $_) } | Where-Object { $events[$_] -like 'package-complete:*' })
+    if ($setupIndex -lt 0 -or @($packageIndexes | Where-Object { $_ -ge $setupIndex }).Count) { throw 'Setup started before package completion' }
+} finally {
+    $env:Path = $oldPath
+    foreach ($name in @('SCOOP_FIXTURE_BIN', 'SCOOP_FIXTURE_LOG')) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
+    if ($null -eq $oldAppData) { Remove-Item Env:APPDATA -ErrorAction SilentlyContinue } else { $env:APPDATA = $oldAppData }
+    if ($null -eq $oldLocalAppData) { Remove-Item Env:LOCALAPPDATA -ErrorAction SilentlyContinue } else { $env:LOCALAPPDATA = $oldLocalAppData }
+    if ($null -eq $oldDotfilesHome) { Remove-Item Env:DOTFILES_HOME -ErrorAction SilentlyContinue } else { $env:DOTFILES_HOME = $oldDotfilesHome }
+    if ($null -eq $oldSecretFile) { Remove-Item Env:DOTFILES_SECRETS_FILE -ErrorAction SilentlyContinue } else { $env:DOTFILES_SECRETS_FILE = $oldSecretFile }
+    if ($null -eq $oldAgeIdentity) { Remove-Item Env:AGE_IDENTITY -ErrorAction SilentlyContinue } else { $env:AGE_IDENTITY = $oldAgeIdentity }
+    if ($null -eq $oldThemeApi) { Remove-Item Env:OPENCODE_THEME_API_URL -ErrorAction SilentlyContinue } else { $env:OPENCODE_THEME_API_URL = $oldThemeApi }
+    if ($null -eq $oldThemeRaw) { Remove-Item Env:OPENCODE_THEME_RAW_URL -ErrorAction SilentlyContinue } else { $env:OPENCODE_THEME_RAW_URL = $oldThemeRaw }
+    Remove-Item Function:scoop, Function:age -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue
+}
 Write-Output 'PowerShell package tests passed'

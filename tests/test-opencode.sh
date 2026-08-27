@@ -5,6 +5,8 @@ failures=0
 
 manifest="$ROOT/modules/manifest.conf"
 module="$ROOT/modules/opencode/module.conf"
+readme="$ROOT/README.md"
+contributing="$ROOT/CONTRIBUTING.md"
 
 grep -Fq 'module=opencode' "$manifest" || failures=$((failures + 1))
 grep -Fq 'name=opencode' "$module" || failures=$((failures + 1))
@@ -12,6 +14,20 @@ grep -Fq 'platforms=linux,windows' "$module" || failures=$((failures + 1))
 grep -Fq 'default=false' "$module" || failures=$((failures + 1))
 grep -Fq 'setup=linux:opencode/setup.sh' "$module" || failures=$((failures + 1))
 grep -Fq 'setup=windows:opencode/setup.ps1' "$module" || failures=$((failures + 1))
+
+grep -Fq './install.sh --apps opencode' "$readme" || failures=$((failures + 1))
+grep -Fq '.\\install.ps1 -Apps opencode' "$readme" || failures=$((failures + 1))
+grep -Fq 'secrets/opencode.env.age' "$readme" || failures=$((failures + 1))
+for secret_name in OPENROUTER_API_KEY AZURE_API_KEY AZURE_RESOURCE_NAME DIGITALOCEAN_ACCESS_TOKEN; do
+  grep -Fq "$secret_name" "$readme" || failures=$((failures + 1))
+done
+grep -Fq 'uvx duckduckgo-mcp-server' "$readme" || failures=$((failures + 1))
+grep -Fq 'superpowers@git+https://github.com/obra/superpowers.git' "$readme" || failures=$((failures + 1))
+grep -Fq 'latest Catppuccin OpenCode themes' "$readme" || failures=$((failures + 1))
+grep -Fq 'does not select or add a default theme' "$readme" || failures=$((failures + 1))
+grep -Fq 'Never commit the plaintext' "$readme" || failures=$((failures + 1))
+grep -Fq 'protected user-local files' "$contributing" || failures=$((failures + 1))
+grep -Fq 'do not commit that bundle' "$contributing" || failures=$((failures + 1))
 
 grep -Fq 'package=opencode|brew:anomalyco/tap/opencode' "$module" || failures=$((failures + 1))
 grep -Fq 'package=opencode|mise:github:anomalyco/opencode' "$module" || failures=$((failures + 1))

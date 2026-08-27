@@ -2,6 +2,8 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $manifest = Get-Content (Join-Path $root 'modules\manifest.conf')
 $module = Get-Content (Join-Path $root 'modules\opencode\module.conf')
+$readme = Get-Content (Join-Path $root 'README.md') -Raw
+$contributing = Get-Content (Join-Path $root 'CONTRIBUTING.md') -Raw
 
 if ('module=opencode' -notin $manifest) { throw 'OpenCode module registration missing' }
 if ('name=opencode' -notin $module) { throw 'OpenCode module name missing' }
@@ -9,6 +11,16 @@ if ('platforms=linux,windows' -notin $module) { throw 'OpenCode platforms missin
 if ('default=false' -notin $module) { throw 'OpenCode must be opt-in' }
 if ('setup=linux:opencode/setup.sh' -notin $module) { throw 'OpenCode Bash setup declaration missing' }
 if ('setup=windows:opencode/setup.ps1' -notin $module) { throw 'OpenCode PowerShell setup declaration missing' }
+
+foreach ($text in @('./install.sh --apps opencode', '.\install.ps1 -Apps opencode', 'secrets/opencode.env.age', 'uvx duckduckgo-mcp-server', 'superpowers@git+https://github.com/obra/superpowers.git', 'latest Catppuccin OpenCode themes', 'does not select or add a default theme', 'Never commit the plaintext')) {
+    if ($readme -notlike "*$text*") { throw "README OpenCode documentation missing: $text" }
+}
+foreach ($secretName in @('OPENROUTER_API_KEY', 'AZURE_API_KEY', 'AZURE_RESOURCE_NAME', 'DIGITALOCEAN_ACCESS_TOKEN')) {
+    if ($readme -notlike "*$secretName*") { throw "README OpenCode secret name missing: $secretName" }
+}
+foreach ($text in @('protected user-local files', 'do not commit that bundle')) {
+    if ($contributing -notlike "*$text*") { throw "CONTRIBUTING OpenCode documentation missing: $text" }
+}
 
 if ('package=opencode|brew:anomalyco/tap/opencode' -notin $module) { throw 'OpenCode Homebrew package declaration missing' }
 if ('package=opencode|mise:github:anomalyco/opencode' -notin $module) { throw 'OpenCode mise package declaration missing' }

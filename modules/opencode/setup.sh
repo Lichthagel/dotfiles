@@ -73,15 +73,20 @@ theme_api_url="${OPENCODE_THEME_API_URL:-https://api.github.com/repos/catppuccin
 theme_raw_url="${OPENCODE_THEME_RAW_URL:-https://raw.githubusercontent.com/catppuccin/opencode/main}"
 theme_tmp="$(mktemp -d "$config_dir/.themes.XXXXXX")"
 theme_paths_tmp="$theme_tmp/paths"
-curl --fail --silent --show-error --location "$theme_api_url" \
+printf 'Fetching latest Catppuccin OpenCode theme list...\n' >&2
+curl --fail --silent --show-error --location --connect-timeout 10 --max-time 60 "$theme_api_url" \
   | jq -r '.tree[] | select(.type == "blob" and (.path | test("^themes/.+\\.json$"))) | .path' \
   > "$theme_paths_tmp"
 [[ -s "$theme_paths_tmp" ]] || { printf 'No Catppuccin OpenCode themes discovered\n' >&2; exit 1; }
 
+theme_count="$(wc -l < "$theme_paths_tmp")"
+theme_index=0
 while IFS= read -r theme_path; do
+  theme_index=$((theme_index + 1))
+  printf 'Fetching Catppuccin theme %s/%s: %s\n' "$theme_index" "$theme_count" "$theme_path" >&2
   theme_file="$theme_tmp/$theme_path"
   mkdir -p "$(dirname "$theme_file")"
-  curl --fail --silent --show-error --location \
+  curl --fail --silent --show-error --location --connect-timeout 10 --max-time 60 \
     "${theme_raw_url%/}/$theme_path" > "$theme_file"
   jq empty "$theme_file" >/dev/null
 done < "$theme_paths_tmp"

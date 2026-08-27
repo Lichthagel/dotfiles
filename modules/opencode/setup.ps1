@@ -99,3 +99,39 @@ try {
 } finally {
     if (Test-Path -LiteralPath $configTemp) { Remove-Item -LiteralPath $configTemp -Force -ErrorAction SilentlyContinue }
 }
+
+$themesDir = Join-Path $configDir 'themes'
+$themeApiUrl = if ($env:OPENCODE_THEME_API_URL) { $env:OPENCODE_THEME_API_URL } else { 'https://api.github.com/repos/catppuccin/opencode/git/trees/main?recursive=1' }
+$themeRawUrl = if ($env:OPENCODE_THEME_RAW_URL) { $env:OPENCODE_THEME_RAW_URL } else { 'https://raw.githubusercontent.com/catppuccin/opencode/main' }
+$themeTemp = Join-Path $configDir ('.themes.' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $themeTemp -Force | Out-Null
+try {
+    $themeApi = [Uri]$themeApiUrl
+    $tree = if ($themeApi.IsFile) {
+        Get-Content -LiteralPath $themeApi.LocalPath -Raw | ConvertFrom-Json
+    } else {
+        Invoke-RestMethod -Uri $themeApiUrl -TimeoutSec 30
+    }
+    $themePaths = @($tree.tree | Where-Object {
+        $_.type -eq 'blob' -and $_.path -match '^themes/[^/]+\.json$'
+    } | ForEach-Object { [string]$_.path })
+    if ($themePaths.Count -eq 0) { throw 'No Catppuccin OpenCode themes discovered' }
+
+    foreach ($themePath in $themePaths) {
+        $themeName = Split-Path $themePath -Leaf
+        $themeFile = Join-Path $themeTemp $themeName
+        $themeUri = [Uri]($themeRawUrl.TrimEnd('/') + '/' + $themePath)
+        if ($themeUri.IsFile) {
+            Copy-Item -LiteralPath $themeUri.LocalPath -Destination $themeFile
+        } else {
+            Invoke-WebRequest -Uri $themeUri.AbsoluteUri -OutFile $themeFile -TimeoutSec 30
+        }
+        Get-Content -LiteralPath $themeFile -Raw | ConvertFrom-Json | Out-Null
+    }
+
+    New-Item -ItemType Directory -Path $themesDir -Force | Out-Null
+    Get-ChildItem -LiteralPath $themesDir -Filter 'catppuccin-*.json' -File | Remove-Item -Force
+    Get-ChildItem -LiteralPath $themeTemp -Filter '*.json' -File | Move-Item -Destination $themesDir -Force
+} finally {
+    if (Test-Path -LiteralPath $themeTemp) { Remove-Item -LiteralPath $themeTemp -Recurse -Force -ErrorAction SilentlyContinue }
+}

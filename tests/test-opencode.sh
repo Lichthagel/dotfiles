@@ -43,9 +43,30 @@ export AZURE_API_KEY='azure-test-secret'
 export AZURE_RESOURCE_NAME='azure-resource-test'
 export DIGITALOCEAN_ACCESS_TOKEN='digitalocean-test-secret'
 
+theme_server="$fixture/themeserver"
+mkdir -p "$theme_server/themes"
+cat > "$theme_server/tree.json" <<'JSON'
+{"tree":[{"path":"themes/catppuccin-frappe-latte.json","type":"blob"},{"path":"themes/catppuccin-mocha-blue.json","type":"blob"},{"path":"README.md","type":"blob"}]}
+JSON
+printf '{"name":"frappe latte"}\n' > "$theme_server/themes/catppuccin-frappe-latte.json"
+printf '{"name":"mocha blue"}\n' > "$theme_server/themes/catppuccin-mocha-blue.json"
+trap 'rm -rf "$fixture"' EXIT
+export OPENCODE_THEME_API_URL="file://$theme_server/tree.json"
+export OPENCODE_THEME_RAW_URL="file://$theme_server"
+
+themes_dir="$config_dir/themes"
+mkdir -p "$themes_dir"
+printf '{"name":"old"}\n' > "$themes_dir/catppuccin-old.json"
+printf '{"name":"keep"}\n' > "$themes_dir/unrelated.json"
+
 if ! bash "$setup"; then
   failures=$((failures + 1))
 else
+  [ -f "$themes_dir/catppuccin-frappe-latte.json" ] || failures=$((failures + 1))
+  [ -f "$themes_dir/catppuccin-mocha-blue.json" ] || failures=$((failures + 1))
+  [ ! -f "$themes_dir/catppuccin-old.json" ] || failures=$((failures + 1))
+  [ -f "$themes_dir/unrelated.json" ] || failures=$((failures + 1))
+  [ "$(jq -r 'has("theme")' "$config")" = false ] || failures=$((failures + 1))
   jq -e '.unrelated.keep == true' "$config" >/dev/null || failures=$((failures + 1))
   jq -e --arg path "$config_dir/openrouter-api-key" '.provider.openrouter.options.apiKey == ("{file:" + $path + "}")' "$config" >/dev/null || failures=$((failures + 1))
   jq -e --arg path "$config_dir/azure-api-key" --arg resource "$config_dir/azure-resource-name" '.provider.azure.options.apiKey == ("{file:" + $path + "}") and .provider.azure.options.resourceName == ("{file:" + $resource + "}")' "$config" >/dev/null || failures=$((failures + 1))
@@ -72,6 +93,14 @@ else
   fi
   [ "$(cat "$config")" = "$config_before" ] || failures=$((failures + 1))
   export AZURE_API_KEY='azure-test-secret'
+
+  printf '{"tree":[{"path":"themes/catppuccin-missing.json","type":"blob"}]}' > "$theme_server/tree.json"
+  themes_before="$(find "$themes_dir" -maxdepth 1 -type f -printf '%f\n' | sort)"
+  if bash "$setup"; then
+    failures=$((failures + 1))
+  fi
+  [ "$(find "$themes_dir" -maxdepth 1 -type f -printf '%f\n' | sort)" = "$themes_before" ] || failures=$((failures + 1))
+  [ -z "$(find "$config_dir" -maxdepth 1 -type d -name '.themes.*' -print -quit)" ] || failures=$((failures + 1))
 fi
 
 printf '{invalid' > "$config"

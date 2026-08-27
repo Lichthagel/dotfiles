@@ -25,10 +25,14 @@ fi
 
 credential_tmp="$(mktemp -d "$config_dir/.credentials.XXXXXX")"
 config_tmp=''
+theme_tmp=''
 cleanup() {
   rm -rf "$credential_tmp"
   if [[ -n "$config_tmp" ]]; then
     rm -f "$config_tmp"
+  fi
+  if [[ -n "$theme_tmp" ]]; then
+    rm -rf "$theme_tmp"
   fi
 }
 trap cleanup EXIT
@@ -68,3 +72,24 @@ fi
 jq empty "$config_tmp" >/dev/null
 mv -f "$config_tmp" "$config_file"
 config_tmp=''
+
+themes_dir="$config_dir/themes"
+theme_api_url="${OPENCODE_THEME_API_URL:-https://api.github.com/repos/catppuccin/opencode/git/trees/main?recursive=1}"
+theme_raw_url="${OPENCODE_THEME_RAW_URL:-https://raw.githubusercontent.com/catppuccin/opencode/main}"
+theme_tmp="$(mktemp -d "$config_dir/.themes.XXXXXX")"
+theme_paths_tmp="$theme_tmp/paths"
+curl --fail --silent --show-error --location "$theme_api_url" \
+  | jq -r '.tree[] | select(.type == "blob" and (.path | startswith("themes/") and endswith(".json"))) | .path' \
+  > "$theme_paths_tmp"
+[[ -s "$theme_paths_tmp" ]] || { printf 'No Catppuccin OpenCode themes discovered\n' >&2; exit 1; }
+
+while IFS= read -r theme_path; do
+  theme_name="${theme_path##*/}"
+  curl --fail --silent --show-error --location \
+    "${theme_raw_url%/}/$theme_path" > "$theme_tmp/$theme_name"
+  jq empty "$theme_tmp/$theme_name" >/dev/null
+done < "$theme_paths_tmp"
+
+mkdir -p "$themes_dir"
+find "$themes_dir" -maxdepth 1 -type f -name 'catppuccin-*.json' -delete
+find "$theme_tmp" -maxdepth 1 -type f -name '*.json' -exec mv -f {} "$themes_dir/" \;

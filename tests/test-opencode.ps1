@@ -38,6 +38,8 @@ foreach ($name in $secretValues.Keys) {
     Set-Item "Env:$name" $secretValues[$name]
 }
 
+$themeServer = Join-Path $testRoot 'themeserver'
+
 try {
     New-Item -ItemType Directory -Path $configDir -Force | Out-Null
     @{
@@ -52,9 +54,30 @@ try {
     } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $configFile -Encoding utf8
     $env:APPDATA = $configRoot
 
+    New-Item -ItemType Directory -Path (Join-Path $themeServer 'themes') -Force | Out-Null
+    @{ tree = @(
+        @{ path = 'themes/catppuccin-frappe-latte.json'; type = 'blob' }
+        @{ path = 'themes/catppuccin-mocha-blue.json'; type = 'blob' }
+        @{ path = 'README.md'; type = 'blob' }
+    ) } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $themeServer 'tree.json')
+    '{"name":"frappe latte"}' | Set-Content (Join-Path $themeServer 'themes/catppuccin-frappe-latte.json')
+    '{"name":"mocha blue"}' | Set-Content (Join-Path $themeServer 'themes/catppuccin-mocha-blue.json')
+    $env:OPENCODE_THEME_API_URL = ([Uri]::new((Join-Path $themeServer 'tree.json'))).AbsoluteUri
+    $env:OPENCODE_THEME_RAW_URL = ([Uri]::new($themeServer)).AbsoluteUri.TrimEnd('/')
+    $themesDir = Join-Path $configDir 'themes'
+    New-Item -ItemType Directory -Path $themesDir -Force | Out-Null
+    '{"name":"old"}' | Set-Content (Join-Path $themesDir 'catppuccin-old.json')
+    '{"name":"keep"}' | Set-Content (Join-Path $themesDir 'unrelated.json')
+
     & (Join-Path $root 'modules\opencode\setup.ps1')
 
     $result = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
+    foreach ($theme in @('catppuccin-frappe-latte.json', 'catppuccin-mocha-blue.json')) {
+        if (-not (Test-Path (Join-Path $themesDir $theme))) { throw "Theme missing: $theme" }
+    }
+    if (Test-Path (Join-Path $themesDir 'catppuccin-old.json')) { throw 'Old managed theme was not replaced' }
+    if (-not (Test-Path (Join-Path $themesDir 'unrelated.json'))) { throw 'Unrelated theme was removed' }
+    if ($null -ne $result.theme) { throw 'Default theme was added' }
     if (-not $result.custom.preserved) { throw 'Unrelated JSON property was not preserved' }
     if ($result.provider.openrouter.options.apiKey -ne ('{file:' + (Join-Path $configDir 'openrouter-api-key') + '}')) { throw 'OpenRouter provider value is incorrect' }
     if ($result.provider.azure.options.apiKey -ne ('{file:' + (Join-Path $configDir 'azure-api-key') + '}')) { throw 'Azure API key value is incorrect' }
@@ -78,6 +101,15 @@ try {
     & (Join-Path $root 'modules\opencode\setup.ps1')
     $result = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
     if (@($result.plugin | Where-Object { $_ -eq $pluginName }).Count -ne 1) { throw 'Superpowers plugin is not idempotent' }
+
+    @{ tree = @(@{ path = 'themes/catppuccin-missing.json'; type = 'blob' }) } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $themeServer 'tree.json')
+    $themesBefore = @(Get-ChildItem -LiteralPath $themesDir -File | ForEach-Object Name | Sort-Object)
+    try { & (Join-Path $root 'modules\opencode\setup.ps1'); throw 'Missing theme unexpectedly succeeded' } catch {
+        if ($_.Exception.Message -eq 'Missing theme unexpectedly succeeded') { throw }
+    }
+    $themesAfter = @(Get-ChildItem -LiteralPath $themesDir -File | ForEach-Object Name | Sort-Object)
+    if ([string]::Join('|', $themesAfter) -ne [string]::Join('|', $themesBefore)) { throw 'Theme set changed after failed download' }
+    if (@(Get-ChildItem -LiteralPath $configDir -Directory -Filter '.themes.*').Count -ne 0) { throw 'Theme staging directory was not cleaned up' }
 
     $invalid = '{ "unrelated": "must remain"'
     Set-Content -LiteralPath $configFile -Value $invalid -Encoding utf8

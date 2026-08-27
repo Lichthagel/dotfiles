@@ -98,7 +98,7 @@ $config.mcp | Add-Member -MemberType NoteProperty -Name 'ddg-search' -Value ([ps
 
 $pluginName = 'superpowers@git+https://github.com/obra/superpowers.git'
 $plugins = if ($config.PSObject.Properties['plugin']) { @($config.plugin) } else { @() }
-$config.plugin = @($plugins | Where-Object { $_ -ne $pluginName }) + $pluginName
+$config | Add-Member -MemberType NoteProperty -Name plugin -Value (@($plugins | Where-Object { $_ -ne $pluginName }) + $pluginName) -Force
 
 $configTemp = Join-Path $configDir ('.opencode.' + [guid]::NewGuid().ToString('N') + '.tmp')
 $json = $config | ConvertTo-Json -Depth 20

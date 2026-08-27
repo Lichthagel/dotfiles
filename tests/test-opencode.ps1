@@ -125,6 +125,13 @@ try {
     $result = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
     if (@($result.plugin | Where-Object { $_ -eq $pluginName }).Count -ne 1) { throw 'Superpowers plugin is not idempotent' }
 
+    $withoutPlugin = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
+    $withoutPlugin.PSObject.Properties.Remove('plugin')
+    $withoutPlugin | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $configFile -Encoding utf8
+    & (Join-Path $root 'modules\opencode\setup.ps1')
+    $result = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
+    if (@($result.plugin | Where-Object { $_ -eq $pluginName }).Count -ne 1) { throw 'Superpowers plugin was not created' }
+
     $configBeforeMissing = Get-Content -LiteralPath $configFile -Raw
     $credentialsBeforeMissing = @('openrouter-api-key', 'azure-api-key', 'azure-resource-name', 'digitalocean-access-token') | ForEach-Object { "${_}:$((Get-Content (Join-Path $configDir $_) -Raw))" }
     $savedAzureKey = $env:AZURE_API_KEY

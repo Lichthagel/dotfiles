@@ -54,14 +54,14 @@ try {
     } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $configFile -Encoding utf8
     $env:APPDATA = $configRoot
 
-    New-Item -ItemType Directory -Path (Join-Path $themeServer 'themes') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $themeServer 'themes\frappe'), (Join-Path $themeServer 'themes\mocha') -Force | Out-Null
     @{ tree = @(
-        @{ path = 'themes/catppuccin-frappe-latte.json'; type = 'blob' }
-        @{ path = 'themes/catppuccin-mocha-blue.json'; type = 'blob' }
+        @{ path = 'themes/frappe/catppuccin-frappe-latte.json'; type = 'blob' }
+        @{ path = 'themes/mocha/catppuccin-mocha-blue.json'; type = 'blob' }
         @{ path = 'README.md'; type = 'blob' }
     ) } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $themeServer 'tree.json')
-    '{"name":"frappe latte"}' | Set-Content (Join-Path $themeServer 'themes/catppuccin-frappe-latte.json')
-    '{"name":"mocha blue"}' | Set-Content (Join-Path $themeServer 'themes/catppuccin-mocha-blue.json')
+    '{"name":"frappe latte"}' | Set-Content (Join-Path $themeServer 'themes\frappe\catppuccin-frappe-latte.json')
+    '{"name":"mocha blue"}' | Set-Content (Join-Path $themeServer 'themes\mocha\catppuccin-mocha-blue.json')
     $env:OPENCODE_THEME_API_URL = ([Uri]::new((Join-Path $themeServer 'tree.json'))).AbsoluteUri
     $env:OPENCODE_THEME_RAW_URL = ([Uri]::new($themeServer)).AbsoluteUri.TrimEnd('/')
     $themesDir = Join-Path $configDir 'themes'
@@ -102,7 +102,7 @@ try {
     $result = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
     if (@($result.plugin | Where-Object { $_ -eq $pluginName }).Count -ne 1) { throw 'Superpowers plugin is not idempotent' }
 
-    @{ tree = @(@{ path = 'themes/catppuccin-missing.json'; type = 'blob' }) } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $themeServer 'tree.json')
+    @{ tree = @(@{ path = 'themes/macchiato/catppuccin-macchiato-missing.json'; type = 'blob' }) } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $themeServer 'tree.json')
     $themesBefore = @(Get-ChildItem -LiteralPath $themesDir -File | ForEach-Object Name | Sort-Object)
     try { & (Join-Path $root 'modules\opencode\setup.ps1'); throw 'Missing theme unexpectedly succeeded' } catch {
         if ($_.Exception.Message -eq 'Missing theme unexpectedly succeeded') { throw }

@@ -113,7 +113,7 @@ try {
         Invoke-RestMethod -Uri $themeApiUrl -TimeoutSec 30
     }
     $themePaths = @($tree.tree | Where-Object {
-        $_.type -eq 'blob' -and $_.path -match '^themes/[^/]+\.json$'
+        $_.type -eq 'blob' -and $_.path -match '^themes/.+\.json$'
     } | ForEach-Object { [string]$_.path })
     if ($themePaths.Count -eq 0) { throw 'No Catppuccin OpenCode themes discovered' }
 

@@ -79,7 +79,7 @@ theme_raw_url="${OPENCODE_THEME_RAW_URL:-https://raw.githubusercontent.com/catpp
 theme_tmp="$(mktemp -d "$config_dir/.themes.XXXXXX")"
 theme_paths_tmp="$theme_tmp/paths"
 curl --fail --silent --show-error --location "$theme_api_url" \
-  | jq -r '.tree[] | select(.type == "blob" and (.path | startswith("themes/") and endswith(".json"))) | .path' \
+  | jq -r '.tree[] | select(.type == "blob" and (.path | test("^themes/.+\\.json$"))) | .path' \
   > "$theme_paths_tmp"
 [[ -s "$theme_paths_tmp" ]] || { printf 'No Catppuccin OpenCode themes discovered\n' >&2; exit 1; }
 

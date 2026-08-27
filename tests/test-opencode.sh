@@ -44,12 +44,12 @@ export AZURE_RESOURCE_NAME='azure-resource-test'
 export DIGITALOCEAN_ACCESS_TOKEN='digitalocean-test-secret'
 
 theme_server="$fixture/themeserver"
-mkdir -p "$theme_server/themes"
+mkdir -p "$theme_server/themes/frappe" "$theme_server/themes/mocha"
 cat > "$theme_server/tree.json" <<'JSON'
-{"tree":[{"path":"themes/catppuccin-frappe-latte.json","type":"blob"},{"path":"themes/catppuccin-mocha-blue.json","type":"blob"},{"path":"README.md","type":"blob"}]}
+{"tree":[{"path":"themes/frappe/catppuccin-frappe-latte.json","type":"blob"},{"path":"themes/mocha/catppuccin-mocha-blue.json","type":"blob"},{"path":"README.md","type":"blob"}]}
 JSON
-printf '{"name":"frappe latte"}\n' > "$theme_server/themes/catppuccin-frappe-latte.json"
-printf '{"name":"mocha blue"}\n' > "$theme_server/themes/catppuccin-mocha-blue.json"
+printf '{"name":"frappe latte"}\n' > "$theme_server/themes/frappe/catppuccin-frappe-latte.json"
+printf '{"name":"mocha blue"}\n' > "$theme_server/themes/mocha/catppuccin-mocha-blue.json"
 trap 'rm -rf "$fixture"' EXIT
 export OPENCODE_THEME_API_URL="file://$theme_server/tree.json"
 export OPENCODE_THEME_RAW_URL="file://$theme_server"
@@ -94,7 +94,7 @@ else
   [ "$(cat "$config")" = "$config_before" ] || failures=$((failures + 1))
   export AZURE_API_KEY='azure-test-secret'
 
-  printf '{"tree":[{"path":"themes/catppuccin-missing.json","type":"blob"}]}' > "$theme_server/tree.json"
+  printf '{"tree":[{"path":"themes/macchiato/catppuccin-macchiato-missing.json","type":"blob"}]}' > "$theme_server/tree.json"
   themes_before="$(find "$themes_dir" -maxdepth 1 -type f -printf '%f\n' | sort)"
   if bash "$setup"; then
     failures=$((failures + 1))

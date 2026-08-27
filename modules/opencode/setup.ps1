@@ -56,6 +56,8 @@ function Write-ProtectedSecret {
 }
 
 $credentialTemp = Join-Path $configDir ('.credentials.' + [guid]::NewGuid().ToString('N'))
+$configTemp = $null
+$themeTemp = $null
 New-Item -ItemType Directory -Path $credentialTemp -Force | Out-Null
 try {
     function Stage-Secret {
@@ -151,6 +153,6 @@ Get-ChildItem -LiteralPath (Join-Path $themeTemp 'themes') -File -Recurse -Filte
 }
 } finally {
     if (Test-Path -LiteralPath $credentialTemp) { Remove-Item -LiteralPath $credentialTemp -Recurse -Force -ErrorAction SilentlyContinue }
-    if (Test-Path -LiteralPath $configTemp) { Remove-Item -LiteralPath $configTemp -Force -ErrorAction SilentlyContinue }
-    if (Test-Path -LiteralPath $themeTemp) { Remove-Item -LiteralPath $themeTemp -Recurse -Force -ErrorAction SilentlyContinue }
+    if ($configTemp -and (Test-Path -LiteralPath $configTemp)) { Remove-Item -LiteralPath $configTemp -Force -ErrorAction SilentlyContinue }
+    if ($themeTemp -and (Test-Path -LiteralPath $themeTemp)) { Remove-Item -LiteralPath $themeTemp -Recurse -Force -ErrorAction SilentlyContinue }
 }

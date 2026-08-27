@@ -1,5 +1,6 @@
 # Local installer state
 .dotfiles-cache/
+.worktrees/
 secrets/*.env
 
 # Editor and operating-system noise

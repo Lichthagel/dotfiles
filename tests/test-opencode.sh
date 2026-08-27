@@ -16,7 +16,7 @@ grep -Fq 'setup=linux:opencode/setup.sh' "$module" || failures=$((failures + 1))
 grep -Fq 'setup=windows:opencode/setup.ps1' "$module" || failures=$((failures + 1))
 
 grep -Fq './install.sh --apps opencode' "$readme" || failures=$((failures + 1))
-grep -Fq '.\\install.ps1 -Apps opencode' "$readme" || failures=$((failures + 1))
+grep -Fq '.\install.ps1 -Apps opencode' "$readme" || failures=$((failures + 1))
 grep -Fq 'secrets/opencode.env.age' "$readme" || failures=$((failures + 1))
 for secret_name in OPENROUTER_API_KEY AZURE_API_KEY AZURE_RESOURCE_NAME DIGITALOCEAN_ACCESS_TOKEN; do
   grep -Fq "$secret_name" "$readme" || failures=$((failures + 1))

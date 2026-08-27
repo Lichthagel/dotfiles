@@ -52,6 +52,7 @@ declare -a MODULES=()
 declare -A DESCRIPTIONS=()
 declare -A PLATFORMS=()
 declare -A DEFAULTS=()
+declare -A SECRETS_OPTIONAL=()
 declare -A PROVIDES=()
 declare -A REQUIRES=()
 declare -a MAPS=()
@@ -69,6 +70,8 @@ load_module() {
             description=*) DESCRIPTIONS["$module"]="${line#description=}" ;;
             platforms=*) PLATFORMS["$module"]="${line#platforms=}" ;;
             default=*) DEFAULTS["$module"]="${line#default=}" ;;
+            secrets=optional) SECRETS_OPTIONAL["$module"]=true ;;
+            secrets=*) printf 'Invalid manifest line in %s: %s\n' "$config" "$line" >&2; return 1 ;;
             provides=*)
                 value="${line#provides=}"
                 case "$value" in apt|dnf|pacman|brew|mise|scoop|winget) PROVIDES["$module"]="$value" ;; *) printf 'Invalid manifest line in %s: %s\n' "$config" "$line" >&2; return 1 ;; esac
@@ -338,7 +341,7 @@ install_package() {
 }
 
 run_module_setup() {
-    local entry module declaration platform setup_path secret_source secret_keys key
+    local entry module declaration platform setup_path secret_source secret_keys key identity
     source "$ROOT/lib/secrets.sh"
     for entry in "${SETUPS[@]}"; do
         IFS='|' read -r module declaration <<< "$entry"
@@ -350,7 +353,12 @@ run_module_setup() {
         if [ -n "${DOTFILES_SECRETS_FILE:-}" ] || [ -f "$secret_source" ]; then
             DOTFILES_SECRET_FILE="${DOTFILES_SECRETS_FILE:-$secret_source}"
             DOTFILES_SECRET_KEYS=''
-            dotfiles_decrypt_env || return 1
+            identity="${AGE_IDENTITIES:-$HOME/.config/age/keys.txt}"
+            if [ "${SECRETS_OPTIONAL[$module]:-false}" = true ] && [ -z "${AGE_IDENTITY:-}" ] && [ -z "${AGE_IDENTITIES:-}" ] && [ ! -f "$identity" ]; then
+                DOTFILES_SECRET_FILE=''
+            else
+                dotfiles_decrypt_env || return 1
+            fi
         else
             DOTFILES_SECRET_FILE=''
             DOTFILES_SECRET_KEYS=''

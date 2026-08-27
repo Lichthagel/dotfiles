@@ -9,6 +9,7 @@ if ('module=opencode' -notin $manifest) { throw 'OpenCode module registration mi
 if ('name=opencode' -notin $module) { throw 'OpenCode module name missing' }
 if ('platforms=linux,windows' -notin $module) { throw 'OpenCode platforms missing' }
 if ('default=false' -notin $module) { throw 'OpenCode must be opt-in' }
+if ('secrets=optional' -notin $module) { throw 'OpenCode secret setup must be optional' }
 if ('setup=linux:opencode/setup.sh' -notin $module) { throw 'OpenCode Bash setup declaration missing' }
 if ('setup=windows:opencode/setup.ps1' -notin $module) { throw 'OpenCode PowerShell setup declaration missing' }
 

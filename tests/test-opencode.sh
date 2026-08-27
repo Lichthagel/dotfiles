@@ -12,6 +12,7 @@ grep -Fq 'module=opencode' "$manifest" || failures=$((failures + 1))
 grep -Fq 'name=opencode' "$module" || failures=$((failures + 1))
 grep -Fq 'platforms=linux,windows' "$module" || failures=$((failures + 1))
 grep -Fq 'default=false' "$module" || failures=$((failures + 1))
+grep -Fq 'secrets=optional' "$module" || failures=$((failures + 1))
 grep -Fq 'setup=linux:opencode/setup.sh' "$module" || failures=$((failures + 1))
 grep -Fq 'setup=windows:opencode/setup.ps1' "$module" || failures=$((failures + 1))
 

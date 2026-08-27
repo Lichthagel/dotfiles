@@ -52,12 +52,14 @@ foreach ($entry in $manifest) {
     if ($entry -notmatch '^module=([A-Za-z0-9_-]+)$') { throw "Invalid manifest line: $entry" }
     $name = $Matches[1]
     $config = Join-Path $Root "modules\$name\module.conf"
-    $data = @{ maps = @(); packages = @(); setups = @(); requires = @(); provides = $null }
+    $data = @{ maps = @(); packages = @(); setups = @(); requires = @(); provides = $null; secretsOptional = $false }
     foreach ($line in Get-Content $config) {
         if ($line -match '^name=(.+)$') { $data.name = $Matches[1] }
         elseif ($line -match '^description=(.+)$') { $data.description = $Matches[1] }
         elseif ($line -match '^platforms=(.+)$') { $data.platforms = $Matches[1].Split(',') }
         elseif ($line -match '^default=(true|false)$') { $data.default = [bool]::Parse($Matches[1]) }
+        elseif ($line -match '^secrets=(optional)$') { $data.secretsOptional = $true }
+        elseif ($line -match '^secrets=') { throw "Invalid module line: $line" }
         elseif ($line -match '^provides=(apt|dnf|pacman|brew|mise|scoop|winget)$') { $data.provides = $Matches[1] }
         elseif ($line -match '^provides=') { throw "Invalid module line: $line" }
         elseif ($line -match '^requires=([A-Za-z0-9_-]+(?:,[A-Za-z0-9_-]+)*)$') { $data.requires = @($Matches[1].Split(',')) }
@@ -200,7 +202,10 @@ function Invoke-ModuleSetup($selectedNames) {
             $defaultSecret = Join-Path $Root "secrets\$moduleName.env.age"
             $env:DOTFILES_SECRET_FILE = if ($env:DOTFILES_SECRETS_FILE) { $env:DOTFILES_SECRETS_FILE } elseif (Test-Path -LiteralPath $defaultSecret) { $defaultSecret } else { '' }
             $env:DOTFILES_SECRET_KEYS = ''
-            if ($env:DOTFILES_SECRET_FILE) { $state = Initialize-DotfilesSecrets }
+            $identity = if ($env:AGE_IDENTITIES) { $env:AGE_IDENTITIES } else { Join-Path ($env:APPDATA ?? (Join-Path $env:USERPROFILE 'AppData\Roaming')) 'age\keys.txt' }
+            $hasIdentity = $env:AGE_IDENTITY -or $env:AGE_IDENTITIES -or (Test-Path -LiteralPath $identity)
+            if ($env:DOTFILES_SECRET_FILE -and (-not $modules[$moduleName].secretsOptional -or $hasIdentity)) { $state = Initialize-DotfilesSecrets }
+            elseif ($env:DOTFILES_SECRET_FILE) { $env:DOTFILES_SECRET_FILE = '' }
             & (Join-Path $Root "modules\$($setup[0].Path)")
             if ($LASTEXITCODE -ne 0) { throw "Module setup failed: $moduleName" }
         } finally {

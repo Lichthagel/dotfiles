@@ -92,9 +92,12 @@ age -r AGE_RECIPIENT -o secrets/opencode.env.age opencode.env
 rm opencode.env
 ```
 
-The installer decrypts that bundle only during setup. OpenCode stores the
-values in protected, user-local files in its configuration directory and
-The global `opencode.jsonc` contains `{file:...}` references rather than secret values. On Windows it is stored at `~/.config/opencode/opencode.jsonc`.
+The installer decrypts that bundle only during setup when an age identity/key
+is available. Without one, the optional provider setup is skipped. OpenCode
+stores decrypted values in protected, user-local files in its configuration
+directory, and the global `opencode.jsonc` contains `{file:...}` references
+rather than secret values. On Windows it is stored at
+`~/.config/opencode/opencode.jsonc`.
 Never commit the plaintext environment file, an age private key, or decrypted
 credential files. Configure an age identity through `AGE_IDENTITIES`,
 `AGE_IDENTITY`, or the platform default before selecting the module.

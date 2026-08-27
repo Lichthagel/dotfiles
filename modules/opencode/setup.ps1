@@ -183,9 +183,7 @@ Get-ChildItem -LiteralPath $credentialTemp -File | ForEach-Object {
 }
 Move-Item -LiteralPath $configTemp -Destination $configFile -Force
 Get-ChildItem -LiteralPath (Join-Path $themeTemp 'themes') -File -Recurse -Filter '*.json' | ForEach-Object {
-    $relative = $_.FullName.Substring((Join-Path $themeTemp 'themes').Length + 1)
-    $destination = Join-Path $themesDir $relative
-    New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
+    $destination = Join-Path $themesDir $_.Name
     Move-Item -LiteralPath $_.FullName -Destination $destination -Force
 }
 } finally {

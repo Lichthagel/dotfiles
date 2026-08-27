@@ -69,12 +69,12 @@ try {
 
     New-Item -ItemType Directory -Path (Join-Path $themeServer 'themes\frappe'), (Join-Path $themeServer 'themes\mocha') -Force | Out-Null
     @{ tree = @(
-        @{ path = 'themes/frappe/catppuccin-shared.json'; type = 'blob' }
-        @{ path = 'themes/mocha/catppuccin-shared.json'; type = 'blob' }
+        @{ path = 'themes/frappe/catppuccin-frappe-shared.json'; type = 'blob' }
+        @{ path = 'themes/mocha/catppuccin-mocha-shared.json'; type = 'blob' }
         @{ path = 'README.md'; type = 'blob' }
     ) } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $themeServer 'tree.json')
-    '{"name":"frappe"}' | Set-Content (Join-Path $themeServer 'themes\frappe\catppuccin-shared.json')
-    '{"name":"mocha"}' | Set-Content (Join-Path $themeServer 'themes\mocha\catppuccin-shared.json')
+    '{"name":"frappe"}' | Set-Content (Join-Path $themeServer 'themes\frappe\catppuccin-frappe-shared.json')
+    '{"name":"mocha"}' | Set-Content (Join-Path $themeServer 'themes\mocha\catppuccin-mocha-shared.json')
     $env:OPENCODE_THEME_API_URL = ([Uri]::new((Join-Path $themeServer 'tree.json'))).AbsoluteUri
     $env:OPENCODE_THEME_RAW_URL = ([Uri]::new($themeServer)).AbsoluteUri.TrimEnd('/')
     $themesDir = Join-Path $configDir 'themes'
@@ -87,11 +87,11 @@ try {
     & (Join-Path $root 'modules\opencode\setup.ps1')
 
     $result = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
-    foreach ($theme in @('frappe\catppuccin-shared.json', 'mocha\catppuccin-shared.json')) {
+    foreach ($theme in @('catppuccin-frappe-shared.json', 'catppuccin-mocha-shared.json')) {
         if (-not (Test-Path (Join-Path $themesDir $theme))) { throw "Theme missing: $theme" }
     }
-    if ((Get-Content (Join-Path $themesDir 'frappe\catppuccin-shared.json') -Raw | ConvertFrom-Json).name -ne 'frappe') { throw 'Nested theme collision was flattened or overwritten' }
-    if ((Get-Content (Join-Path $themesDir 'mocha\catppuccin-shared.json') -Raw | ConvertFrom-Json).name -ne 'mocha') { throw 'Nested theme collision was flattened or overwritten' }
+    if ((Get-Content (Join-Path $themesDir 'catppuccin-frappe-shared.json') -Raw | ConvertFrom-Json).name -ne 'frappe') { throw 'Frappé theme was not flattened correctly' }
+    if ((Get-Content (Join-Path $themesDir 'catppuccin-mocha-shared.json') -Raw | ConvertFrom-Json).name -ne 'mocha') { throw 'Mocha theme was not flattened correctly' }
     if (-not (Test-Path (Join-Path $themesDir 'catppuccin-old.json'))) { throw 'Existing theme was removed' }
     if (-not (Test-Path (Join-Path $themesDir 'unrelated.json'))) { throw 'Unrelated theme was removed' }
     if (-not (Test-Path (Join-Path $themesDir 'local\catppuccin-local.json'))) { throw 'Nested unrelated theme was removed' }

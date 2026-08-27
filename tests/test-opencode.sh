@@ -62,10 +62,10 @@ export DIGITALOCEAN_ACCESS_TOKEN='digitalocean-test-secret'
 theme_server="$fixture/themeserver"
 mkdir -p "$theme_server/themes/frappe" "$theme_server/themes/mocha"
 cat > "$theme_server/tree.json" <<'JSON'
-{"tree":[{"path":"themes/frappe/catppuccin-shared.json","type":"blob"},{"path":"themes/mocha/catppuccin-shared.json","type":"blob"},{"path":"README.md","type":"blob"}]}
+{"tree":[{"path":"themes/frappe/catppuccin-frappe-shared.json","type":"blob"},{"path":"themes/mocha/catppuccin-mocha-shared.json","type":"blob"},{"path":"README.md","type":"blob"}]}
 JSON
-printf '{"name":"frappe"}\n' > "$theme_server/themes/frappe/catppuccin-shared.json"
-printf '{"name":"mocha"}\n' > "$theme_server/themes/mocha/catppuccin-shared.json"
+printf '{"name":"frappe"}\n' > "$theme_server/themes/frappe/catppuccin-frappe-shared.json"
+printf '{"name":"mocha"}\n' > "$theme_server/themes/mocha/catppuccin-mocha-shared.json"
 trap 'rm -rf "$fixture"' EXIT
 export OPENCODE_THEME_API_URL="file://$theme_server/tree.json"
 export OPENCODE_THEME_RAW_URL="file://$theme_server"
@@ -80,10 +80,10 @@ printf '{"name":"local"}\n' > "$themes_dir/local/catppuccin-local.json"
 if ! bash "$setup"; then
   failures=$((failures + 1))
 else
-   [ -f "$themes_dir/frappe/catppuccin-shared.json" ] || failures=$((failures + 1))
-   [ -f "$themes_dir/mocha/catppuccin-shared.json" ] || failures=$((failures + 1))
-   [ "$(jq -r '.name' "$themes_dir/frappe/catppuccin-shared.json")" = frappe ] || failures=$((failures + 1))
-   [ "$(jq -r '.name' "$themes_dir/mocha/catppuccin-shared.json")" = mocha ] || failures=$((failures + 1))
+   [ -f "$themes_dir/catppuccin-frappe-shared.json" ] || failures=$((failures + 1))
+   [ -f "$themes_dir/catppuccin-mocha-shared.json" ] || failures=$((failures + 1))
+   [ "$(jq -r '.name' "$themes_dir/catppuccin-frappe-shared.json")" = frappe ] || failures=$((failures + 1))
+   [ "$(jq -r '.name' "$themes_dir/catppuccin-mocha-shared.json")" = mocha ] || failures=$((failures + 1))
    [ -f "$themes_dir/catppuccin-old.json" ] || failures=$((failures + 1))
    [ -f "$themes_dir/unrelated.json" ] || failures=$((failures + 1))
    [ -f "$themes_dir/local/catppuccin-local.json" ] || failures=$((failures + 1))

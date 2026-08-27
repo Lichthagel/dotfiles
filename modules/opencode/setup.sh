@@ -101,9 +101,7 @@ config_tmp=''
 mkdir -p "$themes_dir"
 if [[ -d "$theme_tmp/themes" ]]; then
   find "$theme_tmp/themes" -type f -name '*.json' -print0 | while IFS= read -r -d '' theme_file; do
-    relative_path="${theme_file#"$theme_tmp/themes/"}"
-    destination="$themes_dir/$relative_path"
-    mkdir -p "$(dirname "$destination")"
+    destination="$themes_dir/${theme_file##*/}"
     mv -f "$theme_file" "$destination"
   done
 fi

@@ -59,8 +59,7 @@ jq_filter=' .provider.openrouter = {options: {apiKey: ("{file:" + $openrouter + 
    | .provider.azure = {options: {apiKey: ("{file:" + $azure_key + "}"), resourceName: ("{file:" + $azure_resource + "}")}}
    | .provider.digitalocean = {options: {apiKey: ("{file:" + $digitalocean + "}")}}
    | .mcp."ddg-search" = {type: "local", command: ["uvx", "duckduckgo-mcp-server"], environment: {DDG_SAFE_SEARCH: "OFF"}}
-   | .plugin = (.plugin // [])
-   | if (.plugin | index($plugin_name)) == null then .plugin += [$plugin_name] else . end'
+   | .plugin = [(.plugin // [])[] | select(. != $plugin_name)] + [$plugin_name]'
 if [[ -f "$config_file" ]]; then
   jq "${jq_args[@]}" "$jq_filter" "$config_file" > "$config_tmp"
 else

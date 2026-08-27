@@ -25,6 +25,7 @@ grep -Fq 'package=jq|winget:jqlang.jq' "$module" || failures=$((failures + 1))
 grep -Fq 'package=jq|scoop:jq' "$module" || failures=$((failures + 1))
 
 setup="$ROOT/modules/opencode/setup.sh"
+[ -x "$setup" ] || failures=$((failures + 1))
 fixture="$(mktemp -d)"
 trap 'rm -rf "$fixture"' EXIT
 config_root="$fixture/config"
@@ -32,7 +33,7 @@ config_dir="$config_root/opencode"
 mkdir -p "$config_dir"
 config="$config_dir/opencode.json"
 cat > "$config" <<'JSON'
-{"unrelated":{"keep":true},"plugin":["local-plugin"]}
+{"unrelated":{"keep":true},"plugin":["local-plugin","superpowers@git+https://github.com/obra/superpowers.git","superpowers@git+https://github.com/obra/superpowers.git"]}
 JSON
 
 export HOME="$fixture/home"

@@ -341,7 +341,7 @@ install_package() {
 }
 
 run_module_setup() {
-    local entry module declaration platform setup_path secret_source secret_keys key identity
+    local entry module declaration platform setup_path secret_source secret_keys key identity decrypt_status
     source "$ROOT/lib/secrets.sh"
     for entry in "${SETUPS[@]}"; do
         IFS='|' read -r module declaration <<< "$entry"
@@ -354,10 +354,13 @@ run_module_setup() {
             DOTFILES_SECRET_FILE="${DOTFILES_SECRETS_FILE:-$secret_source}"
             DOTFILES_SECRET_KEYS=''
             identity="${AGE_IDENTITIES:-$HOME/.config/age/keys.txt}"
-            if [ "${SECRETS_OPTIONAL[$module]:-false}" = true ] && [ -z "${AGE_IDENTITY:-}" ] && [ -z "${AGE_IDENTITIES:-}" ] && [ ! -f "$identity" ]; then
+            if [ "${SECRETS_OPTIONAL[$module]:-false}" = true ] && [ -z "${AGE_IDENTITY:-}" ] && [ -z "${AGE_IDENTITIES:-}" ] && [ ! -f "$identity" ] && { ! [ -t 0 ] || ! [ -t 1 ]; }; then
                 DOTFILES_SECRET_FILE=''
             else
-                dotfiles_decrypt_env || return 1
+                DOTFILES_SECRETS_OPTIONAL=0
+                [ "${SECRETS_OPTIONAL[$module]:-false}" = true ] && DOTFILES_SECRETS_OPTIONAL=1
+                if dotfiles_decrypt_env; then decrypt_status=0; else decrypt_status=$?; fi
+                [ "$decrypt_status" -eq 3 ] && DOTFILES_SECRET_FILE='' || [ "$decrypt_status" -eq 0 ] || return 1
             fi
         else
             DOTFILES_SECRET_FILE=''

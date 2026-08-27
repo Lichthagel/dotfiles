@@ -11,6 +11,7 @@ function Initialize-DotfilesSecrets {
     } elseif (-not (Test-Path -LiteralPath $identity)) {
         if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) { throw 'Age identity file not found. Set AGE_IDENTITIES for noninteractive setup.' }
         $identityInput = Read-Host 'Age identity file path or key (default not found)'
+        if ([string]::IsNullOrWhiteSpace($identityInput) -and $env:DOTFILES_SECRETS_OPTIONAL -eq '1') { return $null }
         if ($identityInput.StartsWith('AGE-SECRET-KEY-')) {
             $temp = Join-Path ([System.IO.Path]::GetTempPath()) ('dotfiles-secrets-' + [guid]::NewGuid())
             New-Item -ItemType Directory -Force -Path $temp | Out-Null

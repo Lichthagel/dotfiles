@@ -196,6 +196,7 @@ function Invoke-ModuleSetup($selectedNames) {
         $previousRoot = $env:DOTFILES_ROOT
         $previousFile = $env:DOTFILES_SECRET_FILE
         $previousKeys = $env:DOTFILES_SECRET_KEYS
+        $previousOptional = $env:DOTFILES_SECRETS_OPTIONAL
         $state = $null
         try {
             $env:DOTFILES_ROOT = $Root
@@ -204,8 +205,12 @@ function Invoke-ModuleSetup($selectedNames) {
             $env:DOTFILES_SECRET_KEYS = ''
             $identity = if ($env:AGE_IDENTITIES) { $env:AGE_IDENTITIES } else { Join-Path ($env:APPDATA ?? (Join-Path $env:USERPROFILE 'AppData\Roaming')) 'age\keys.txt' }
             $hasIdentity = $env:AGE_IDENTITY -or $env:AGE_IDENTITIES -or (Test-Path -LiteralPath $identity)
-            if ($env:DOTFILES_SECRET_FILE -and (-not $modules[$moduleName].secretsOptional -or $hasIdentity)) { $state = Initialize-DotfilesSecrets }
-            elseif ($env:DOTFILES_SECRET_FILE) { $env:DOTFILES_SECRET_FILE = '' }
+            $interactive = -not ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected)
+            if ($env:DOTFILES_SECRET_FILE -and (-not $modules[$moduleName].secretsOptional -or $hasIdentity -or $interactive)) {
+                $env:DOTFILES_SECRETS_OPTIONAL = if ($modules[$moduleName].secretsOptional) { '1' } else { '0' }
+                $state = Initialize-DotfilesSecrets
+                if ($null -eq $state) { $env:DOTFILES_SECRET_FILE = '' }
+            } elseif ($env:DOTFILES_SECRET_FILE) { $env:DOTFILES_SECRET_FILE = '' }
             & (Join-Path $Root "modules\$($setup[0].Path)")
             if ($LASTEXITCODE -ne 0) { throw "Module setup failed: $moduleName" }
         } finally {
@@ -213,6 +218,7 @@ function Invoke-ModuleSetup($selectedNames) {
             $env:DOTFILES_ROOT = $previousRoot
             $env:DOTFILES_SECRET_FILE = $previousFile
             $env:DOTFILES_SECRET_KEYS = $previousKeys
+            $env:DOTFILES_SECRETS_OPTIONAL = $previousOptional
         }
     }
 }

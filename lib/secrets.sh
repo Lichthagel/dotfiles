@@ -15,6 +15,9 @@ dotfiles_decrypt_env() {
         if [ -t 0 ] && [ -t 1 ]; then
             printf 'Age identity file path or key (default not found): '
             IFS= read -r identity_input
+            if [ -z "$identity_input" ] && [ "${DOTFILES_SECRETS_OPTIONAL:-}" = 1 ]; then
+                return 3
+            fi
             if [[ "$identity_input" == AGE-SECRET-KEY-* ]]; then
                 DOTFILES_SECRET_TEMP="$(mktemp -d)"
                 chmod 700 "$DOTFILES_SECRET_TEMP"

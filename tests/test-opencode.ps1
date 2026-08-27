@@ -80,6 +80,8 @@ try {
     New-Item -ItemType Directory -Path $themesDir -Force | Out-Null
     '{"name":"old"}' | Set-Content (Join-Path $themesDir 'catppuccin-old.json')
     '{"name":"keep"}' | Set-Content (Join-Path $themesDir 'unrelated.json')
+    New-Item -ItemType Directory -Path (Join-Path $themesDir 'local') -Force | Out-Null
+    '{"name":"local"}' | Set-Content (Join-Path $themesDir 'local\catppuccin-local.json')
 
     & (Join-Path $root 'modules\opencode\setup.ps1')
 
@@ -89,8 +91,9 @@ try {
     }
     if ((Get-Content (Join-Path $themesDir 'frappe\catppuccin-shared.json') -Raw | ConvertFrom-Json).name -ne 'frappe') { throw 'Nested theme collision was flattened or overwritten' }
     if ((Get-Content (Join-Path $themesDir 'mocha\catppuccin-shared.json') -Raw | ConvertFrom-Json).name -ne 'mocha') { throw 'Nested theme collision was flattened or overwritten' }
-    if (Test-Path (Join-Path $themesDir 'catppuccin-old.json')) { throw 'Old managed theme was not replaced' }
+    if (-not (Test-Path (Join-Path $themesDir 'catppuccin-old.json'))) { throw 'Existing theme was removed' }
     if (-not (Test-Path (Join-Path $themesDir 'unrelated.json'))) { throw 'Unrelated theme was removed' }
+    if (-not (Test-Path (Join-Path $themesDir 'local\catppuccin-local.json'))) { throw 'Nested unrelated theme was removed' }
     if ($null -ne $result.theme) { throw 'Default theme was added' }
     if (-not $result.custom.preserved) { throw 'Unrelated JSON property was not preserved' }
     if ($result.provider.openrouter.options.apiKey -ne ('{file:' + (Join-Path $configDir 'openrouter-api-key') + '}')) { throw 'OpenRouter provider value is incorrect' }
@@ -138,11 +141,11 @@ try {
     $configBeforeThemeFailure = Get-Content -LiteralPath $configFile -Raw
     $credentialsBeforeThemeFailure = @('openrouter-api-key', 'azure-api-key', 'azure-resource-name', 'digitalocean-access-token') | ForEach-Object { "${_}:$((Get-Content (Join-Path $configDir $_) -Raw))" }
     @{ tree = @(@{ path = 'themes/macchiato/catppuccin-macchiato-missing.json'; type = 'blob' }) } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $themeServer 'tree.json')
-    $themesBefore = @(Get-ChildItem -LiteralPath $themesDir -File | ForEach-Object Name | Sort-Object)
+    $themesBefore = @(Get-ChildItem -LiteralPath $themesDir -File -Recurse | ForEach-Object { $_.FullName.Substring($themesDir.Length + 1) } | Sort-Object)
     try { & (Join-Path $root 'modules\opencode\setup.ps1'); throw 'Missing theme unexpectedly succeeded' } catch {
         if ($_.Exception.Message -eq 'Missing theme unexpectedly succeeded') { throw }
     }
-    $themesAfter = @(Get-ChildItem -LiteralPath $themesDir -File | ForEach-Object Name | Sort-Object)
+    $themesAfter = @(Get-ChildItem -LiteralPath $themesDir -File -Recurse | ForEach-Object { $_.FullName.Substring($themesDir.Length + 1) } | Sort-Object)
     if ([string]::Join('|', $themesAfter) -ne [string]::Join('|', $themesBefore)) { throw 'Theme set changed after failed download' }
     if ((Get-Content -LiteralPath $configFile -Raw) -ne $configBeforeThemeFailure) { throw 'Config changed after failed theme setup' }
     $credentialsAfterThemeFailure = @('openrouter-api-key', 'azure-api-key', 'azure-resource-name', 'digitalocean-access-token') | ForEach-Object { "${_}:$((Get-Content (Join-Path $configDir $_) -Raw))" }

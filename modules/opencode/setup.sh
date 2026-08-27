@@ -94,7 +94,6 @@ done
 mv -f "$config_tmp" "$config_file"
 config_tmp=''
 mkdir -p "$themes_dir"
-find "$themes_dir" -type f -name 'catppuccin-*.json' -delete
 if [[ -d "$theme_tmp/themes" ]]; then
   find "$theme_tmp/themes" -type f -name '*.json' -print0 | while IFS= read -r -d '' theme_file; do
     relative_path="${theme_file#"$theme_tmp/themes/"}"

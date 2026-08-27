@@ -74,6 +74,8 @@ themes_dir="$config_dir/themes"
 mkdir -p "$themes_dir"
 printf '{"name":"old"}\n' > "$themes_dir/catppuccin-old.json"
 printf '{"name":"keep"}\n' > "$themes_dir/unrelated.json"
+mkdir -p "$themes_dir/local"
+printf '{"name":"local"}\n' > "$themes_dir/local/catppuccin-local.json"
 
 if ! bash "$setup"; then
   failures=$((failures + 1))
@@ -82,8 +84,9 @@ else
    [ -f "$themes_dir/mocha/catppuccin-shared.json" ] || failures=$((failures + 1))
    [ "$(jq -r '.name' "$themes_dir/frappe/catppuccin-shared.json")" = frappe ] || failures=$((failures + 1))
    [ "$(jq -r '.name' "$themes_dir/mocha/catppuccin-shared.json")" = mocha ] || failures=$((failures + 1))
-  [ ! -f "$themes_dir/catppuccin-old.json" ] || failures=$((failures + 1))
-  [ -f "$themes_dir/unrelated.json" ] || failures=$((failures + 1))
+   [ -f "$themes_dir/catppuccin-old.json" ] || failures=$((failures + 1))
+   [ -f "$themes_dir/unrelated.json" ] || failures=$((failures + 1))
+   [ -f "$themes_dir/local/catppuccin-local.json" ] || failures=$((failures + 1))
   [ "$(jq -r 'has("theme")' "$config")" = false ] || failures=$((failures + 1))
   jq -e '.unrelated.keep == true' "$config" >/dev/null || failures=$((failures + 1))
   jq -e --arg path "$config_dir/openrouter-api-key" '.provider.openrouter.options.apiKey == ("{file:" + $path + "}")' "$config" >/dev/null || failures=$((failures + 1))

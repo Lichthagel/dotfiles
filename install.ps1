@@ -130,7 +130,7 @@ function Resolve-ModulePhases($selectedNames) {
 function Test-PackageInstalled($manager, $package) {
     switch ($manager) {
         'winget' { return [bool]((& winget list --id $package --exact --accept-source-agreements 2>$null) -match [regex]::Escape($package)) }
-        'scoop' { return [bool]((& scoop list 2>$null) -match "(?m)^$([regex]::Escape($package))\s") }
+        'scoop' { $output = & scoop list $package 2>$null | Out-String; return [bool]($output -match "(?mi)^\s*$([regex]::Escape($package))\s") }
         'brew' { & brew list --versions $package *> $null; return $LASTEXITCODE -eq 0 }
         'mise' { if ($package -eq 'mise') { return (Test-ManagerAvailable 'mise') }; return [bool]((& mise list 2>$null) -match "(?m)^$([regex]::Escape($package))\s") }
     }

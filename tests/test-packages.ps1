@@ -88,7 +88,7 @@ try {
     @'
 @echo off
 if "%1"=="list" (
-    if exist "%SCOOP_FIXTURE_BIN%\opencode.cmd" echo opencode 1.0
+    if exist "%SCOOP_FIXTURE_BIN%\opencode.cmd" echo     opencode 1.0
     exit /b 0
 )
 if "%1"=="install" (

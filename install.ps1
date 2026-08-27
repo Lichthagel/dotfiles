@@ -166,11 +166,11 @@ function Select-PackagePlan($plan) {
     $cursor = 0
     while ($true) {
         Clear-Host
-        Write-Output 'Package plan (Up/Down move, Left/Right manager, Space toggle, Enter install, b back):'
+        Write-Host 'Package plan (Up/Down move, Left/Right manager, Space toggle, Enter install, b back):'
         for ($i = 0; $i -lt $plan.Count; $i++) {
             $marker = if ($plan[$i].Selected) { 'x' } else { ' ' }
             $pointer = if ($i -eq $cursor) { '>' } else { ' ' }
-            Write-Output "$pointer [$marker] $($plan[$i].Logical) -> $($plan[$i].Manager)"
+            Write-Host "$pointer [$marker] $($plan[$i].Logical) -> $($plan[$i].Manager)"
         }
         $key = [Console]::ReadKey($true)
         switch ($key.Key) {

@@ -62,10 +62,10 @@ export DIGITALOCEAN_ACCESS_TOKEN='digitalocean-test-secret'
 theme_server="$fixture/themeserver"
 mkdir -p "$theme_server/themes/frappe" "$theme_server/themes/mocha"
 cat > "$theme_server/tree.json" <<'JSON'
-{"tree":[{"path":"themes/frappe/catppuccin-frappe-latte.json","type":"blob"},{"path":"themes/mocha/catppuccin-mocha-blue.json","type":"blob"},{"path":"README.md","type":"blob"}]}
+{"tree":[{"path":"themes/frappe/catppuccin-shared.json","type":"blob"},{"path":"themes/mocha/catppuccin-shared.json","type":"blob"},{"path":"README.md","type":"blob"}]}
 JSON
-printf '{"name":"frappe latte"}\n' > "$theme_server/themes/frappe/catppuccin-frappe-latte.json"
-printf '{"name":"mocha blue"}\n' > "$theme_server/themes/mocha/catppuccin-mocha-blue.json"
+printf '{"name":"frappe"}\n' > "$theme_server/themes/frappe/catppuccin-shared.json"
+printf '{"name":"mocha"}\n' > "$theme_server/themes/mocha/catppuccin-shared.json"
 trap 'rm -rf "$fixture"' EXIT
 export OPENCODE_THEME_API_URL="file://$theme_server/tree.json"
 export OPENCODE_THEME_RAW_URL="file://$theme_server"
@@ -78,8 +78,10 @@ printf '{"name":"keep"}\n' > "$themes_dir/unrelated.json"
 if ! bash "$setup"; then
   failures=$((failures + 1))
 else
-  [ -f "$themes_dir/catppuccin-frappe-latte.json" ] || failures=$((failures + 1))
-  [ -f "$themes_dir/catppuccin-mocha-blue.json" ] || failures=$((failures + 1))
+   [ -f "$themes_dir/frappe/catppuccin-shared.json" ] || failures=$((failures + 1))
+   [ -f "$themes_dir/mocha/catppuccin-shared.json" ] || failures=$((failures + 1))
+   [ "$(jq -r '.name' "$themes_dir/frappe/catppuccin-shared.json")" = frappe ] || failures=$((failures + 1))
+   [ "$(jq -r '.name' "$themes_dir/mocha/catppuccin-shared.json")" = mocha ] || failures=$((failures + 1))
   [ ! -f "$themes_dir/catppuccin-old.json" ] || failures=$((failures + 1))
   [ -f "$themes_dir/unrelated.json" ] || failures=$((failures + 1))
   [ "$(jq -r 'has("theme")' "$config")" = false ] || failures=$((failures + 1))
@@ -102,29 +104,37 @@ else
   bash "$setup" || failures=$((failures + 1))
   [ "$(jq '[.plugin[] | select(. == "superpowers@git+https://github.com/obra/superpowers.git")] | length' "$config")" -eq 1 ] || failures=$((failures + 1))
 
-  config_before="$(cat "$config")"
-  unset AZURE_API_KEY
+   config_before="$(cat "$config")"
+   credentials_before_missing="$(for credential in openrouter-api-key azure-api-key azure-resource-name digitalocean-access-token; do printf '%s:' "$credential"; cat "$config_dir/$credential"; printf '\n'; done)"
+   unset AZURE_API_KEY
   if bash "$setup"; then
     failures=$((failures + 1))
   fi
-  [ "$(cat "$config")" = "$config_before" ] || failures=$((failures + 1))
-  export AZURE_API_KEY='azure-test-secret'
+   [ "$(cat "$config")" = "$config_before" ] || failures=$((failures + 1))
+   [ "$(for credential in openrouter-api-key azure-api-key azure-resource-name digitalocean-access-token; do printf '%s:' "$credential"; cat "$config_dir/$credential"; printf '\n'; done)" = "$credentials_before_missing" ] || failures=$((failures + 1))
+   export AZURE_API_KEY='azure-test-secret'
 
-  printf '{"tree":[{"path":"themes/macchiato/catppuccin-macchiato-missing.json","type":"blob"}]}' > "$theme_server/tree.json"
-  themes_before="$(find "$themes_dir" -maxdepth 1 -type f -printf '%f\n' | sort)"
+   config_before_theme_failure="$(cat "$config")"
+   credentials_before_theme_failure="$(for credential in openrouter-api-key azure-api-key azure-resource-name digitalocean-access-token; do printf '%s:' "$credential"; cat "$config_dir/$credential"; printf '\n'; done)"
+   printf '{"tree":[{"path":"themes/macchiato/catppuccin-macchiato-missing.json","type":"blob"}]}' > "$theme_server/tree.json"
+   themes_before="$(find "$themes_dir" -type f -printf '%P\n' | sort)"
   if bash "$setup"; then
     failures=$((failures + 1))
   fi
-  [ "$(find "$themes_dir" -maxdepth 1 -type f -printf '%f\n' | sort)" = "$themes_before" ] || failures=$((failures + 1))
+   [ "$(find "$themes_dir" -type f -printf '%P\n' | sort)" = "$themes_before" ] || failures=$((failures + 1))
+   [ "$(cat "$config")" = "$config_before_theme_failure" ] || failures=$((failures + 1))
+   [ "$(for credential in openrouter-api-key azure-api-key azure-resource-name digitalocean-access-token; do printf '%s:' "$credential"; cat "$config_dir/$credential"; printf '\n'; done)" = "$credentials_before_theme_failure" ] || failures=$((failures + 1))
   [ -z "$(find "$config_dir" -maxdepth 1 -type d -name '.themes.*' -print -quit)" ] || failures=$((failures + 1))
 fi
 
 printf '{invalid' > "$config"
 invalid_before="$(cat "$config")"
+invalid_credentials_before="$(for credential in openrouter-api-key azure-api-key azure-resource-name digitalocean-access-token; do printf '%s:' "$credential"; cat "$config_dir/$credential"; printf '\n'; done)"
 if bash "$setup"; then
   failures=$((failures + 1))
 fi
 [ "$(cat "$config")" = "$invalid_before" ] || failures=$((failures + 1))
+[ "$(for credential in openrouter-api-key azure-api-key azure-resource-name digitalocean-access-token; do printf '%s:' "$credential"; cat "$config_dir/$credential"; printf '\n'; done)" = "$invalid_credentials_before" ] || failures=$((failures + 1))
 
 [ "$failures" -eq 0 ] || exit 1
 printf 'OpenCode Bash assertions passed\n'

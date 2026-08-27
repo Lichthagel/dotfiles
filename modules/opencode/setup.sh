@@ -37,19 +37,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-write_credential() {
+stage_credential() {
   local name="$1"
   local value="$2"
-  local target="$config_dir/$name"
   printf '%s' "$value" > "$credential_tmp/$name"
   chmod 600 "$credential_tmp/$name"
-  mv -f "$credential_tmp/$name" "$target"
 }
 
-write_credential openrouter-api-key "$OPENROUTER_API_KEY"
-write_credential azure-api-key "$AZURE_API_KEY"
-write_credential azure-resource-name "$AZURE_RESOURCE_NAME"
-write_credential digitalocean-access-token "$DIGITALOCEAN_ACCESS_TOKEN"
+stage_credential openrouter-api-key "$OPENROUTER_API_KEY"
+stage_credential azure-api-key "$AZURE_API_KEY"
+stage_credential azure-resource-name "$AZURE_RESOURCE_NAME"
+stage_credential digitalocean-access-token "$DIGITALOCEAN_ACCESS_TOKEN"
 
 config_tmp="$(mktemp "$config_dir/.opencode.json.XXXXXX")"
 jq_args=(
@@ -70,9 +68,6 @@ else
   jq "${jq_args[@]}" "$jq_filter" <<< '{}' > "$config_tmp"
 fi
 jq empty "$config_tmp" >/dev/null
-mv -f "$config_tmp" "$config_file"
-config_tmp=''
-
 themes_dir="$config_dir/themes"
 theme_api_url="${OPENCODE_THEME_API_URL:-https://api.github.com/repos/catppuccin/opencode/git/trees/main?recursive=1}"
 theme_raw_url="${OPENCODE_THEME_RAW_URL:-https://raw.githubusercontent.com/catppuccin/opencode/main}"
@@ -84,12 +79,27 @@ curl --fail --silent --show-error --location "$theme_api_url" \
 [[ -s "$theme_paths_tmp" ]] || { printf 'No Catppuccin OpenCode themes discovered\n' >&2; exit 1; }
 
 while IFS= read -r theme_path; do
-  theme_name="${theme_path##*/}"
+  theme_file="$theme_tmp/$theme_path"
+  mkdir -p "$(dirname "$theme_file")"
   curl --fail --silent --show-error --location \
-    "${theme_raw_url%/}/$theme_path" > "$theme_tmp/$theme_name"
-  jq empty "$theme_tmp/$theme_name" >/dev/null
+    "${theme_raw_url%/}/$theme_path" > "$theme_file"
+  jq empty "$theme_file" >/dev/null
 done < "$theme_paths_tmp"
 
+# All required work is staged before any managed output is replaced.
+for credential in "$credential_tmp"/*; do
+  credential_name="${credential##*/}"
+  mv -f "$credential" "$config_dir/$credential_name"
+done
+mv -f "$config_tmp" "$config_file"
+config_tmp=''
 mkdir -p "$themes_dir"
-find "$themes_dir" -maxdepth 1 -type f -name 'catppuccin-*.json' -delete
-find "$theme_tmp" -maxdepth 1 -type f -name '*.json' -exec mv -f {} "$themes_dir/" \;
+find "$themes_dir" -type f -name 'catppuccin-*.json' -delete
+if [[ -d "$theme_tmp/themes" ]]; then
+  find "$theme_tmp/themes" -type f -name '*.json' -print0 | while IFS= read -r -d '' theme_file; do
+    relative_path="${theme_file#"$theme_tmp/themes/"}"
+    destination="$themes_dir/$relative_path"
+    mkdir -p "$(dirname "$destination")"
+    mv -f "$theme_file" "$destination"
+  done
+fi

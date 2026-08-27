@@ -30,4 +30,4 @@ AZURE_RESOURCE_NAME
 DIGITALOCEAN_ACCESS_TOKEN
 ```
 
-When OpenCode is selected, the installer decrypts the bundle only for setup. The setup hook materializes the values into protected, user-local credential files under the OpenCode configuration directory; the values are not written to tracked files or `opencode.json`.
+When OpenCode is selected, the installer decrypts the bundle only for setup. The setup hook materializes the values into protected, user-local credential files under the OpenCode configuration directory; the values are not written to tracked files or `opencode.jsonc`.

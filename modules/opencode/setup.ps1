@@ -12,12 +12,49 @@ foreach ($name in $requiredSecrets) {
     }
 }
 
-$configDir = Join-Path $env:APPDATA 'opencode'
-$configFile = Join-Path $configDir 'opencode.json'
+$userHome = if ($env:HOME) { $env:HOME } else { $HOME }
+$configDir = Join-Path $userHome '.config\opencode'
+$configFile = Join-Path $configDir 'opencode.jsonc'
 New-Item -ItemType Directory -Path $configDir -Force | Out-Null
 
+function ConvertFrom-Jsonc {
+    param([string]$Text)
+
+    $builder = [System.Text.StringBuilder]::new()
+    $inString = $false
+    $escaped = $false
+    $lineComment = $false
+    $blockComment = $false
+    for ($i = 0; $i -lt $Text.Length; $i++) {
+        $char = $Text[$i]
+        $next = if ($i + 1 -lt $Text.Length) { $Text[$i + 1] } else { [char]0 }
+        if ($lineComment) {
+            if ($char -eq "`n") { $lineComment = $false; [void]$builder.Append($char) }
+            continue
+        }
+        if ($blockComment) {
+            if ($char -eq '*' -and $next -eq '/') { $blockComment = $false; $i++ }
+            elseif ($char -eq "`n") { [void]$builder.Append($char) }
+            continue
+        }
+        if ($inString) {
+            [void]$builder.Append($char)
+            if ($escaped) { $escaped = $false }
+            elseif ($char -eq '\') { $escaped = $true }
+            elseif ($char -eq '"') { $inString = $false }
+            continue
+        }
+        if ($char -eq '"') { $inString = $true; [void]$builder.Append($char); continue }
+        if ($char -eq '/' -and $next -eq '/') { $lineComment = $true; $i++; continue }
+        if ($char -eq '/' -and $next -eq '*') { $blockComment = $true; $i++; continue }
+        [void]$builder.Append($char)
+    }
+    $json = [regex]::Replace($builder.ToString(), ',(\s*[}\]])', '$1')
+    return $json | ConvertFrom-Json
+}
+
 if (Test-Path -LiteralPath $configFile) {
-    $config = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
+    $config = ConvertFrom-Jsonc (Get-Content -LiteralPath $configFile -Raw)
 } else {
     $config = [pscustomobject]@{}
 }
@@ -103,7 +140,7 @@ $config | Add-Member -MemberType NoteProperty -Name plugin -Value (@($plugins | 
 $configTemp = Join-Path $configDir ('.opencode.' + [guid]::NewGuid().ToString('N') + '.tmp')
 $json = $config | ConvertTo-Json -Depth 20
 [System.IO.File]::WriteAllText($configTemp, $json, [System.Text.UTF8Encoding]::new($false))
-Get-Content -LiteralPath $configTemp -Raw | ConvertFrom-Json | Out-Null
+ConvertFrom-Jsonc (Get-Content -LiteralPath $configTemp -Raw) | Out-Null
 # Theme discovery and downloads below complete before any staged output is committed.
 
 $themesDir = Join-Path $configDir 'themes'

@@ -21,7 +21,7 @@ The tests use isolated temporary homes and fake package-manager commands. They d
 OpenCode coverage must preserve both platform setup declarations and the
 opt-in behavior. Its setup fetches the latest upstream Catppuccin themes on
 each rerun without adding a default theme, writes provider credentials to
-protected user-local files, and keeps secret values out of `opencode.json`.
+protected user-local files, and keeps secret values out of `opencode.jsonc`.
 The configured local MCP prerequisite is `uvx duckduckgo-mcp-server`, and the
 Superpowers plugin must continue to use its configured Git URL.
 

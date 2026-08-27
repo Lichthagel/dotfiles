@@ -76,7 +76,7 @@ $fixtureLog = Join-Path $fixture 'events.log'
 $fixtureSecrets = Join-Path $fixture 'opencode.env.age'
 $fixtureThemes = Join-Path $fixture 'themes'
 $oldPath = $env:Path
-$oldAppData = $env:APPDATA
+$oldHome = $env:HOME
 $oldLocalAppData = $env:LOCALAPPDATA
 $oldDotfilesHome = $env:DOTFILES_HOME
 $oldSecretFile = $env:DOTFILES_SECRETS_FILE
@@ -115,7 +115,7 @@ echo DIGITALOCEAN_ACCESS_TOKEN=test-digitalocean
     $env:Path = "$fixtureBin;$oldPath"
     $env:SCOOP_FIXTURE_BIN = $fixtureBin
     $env:SCOOP_FIXTURE_LOG = $fixtureLog
-    $env:APPDATA = $fixtureAppData
+    $env:HOME = Join-Path $fixture 'home'
     $env:LOCALAPPDATA = $fixtureLocalAppData
     $env:DOTFILES_HOME = Join-Path $fixture 'home'
     $env:DOTFILES_SECRETS_FILE = $fixtureSecrets
@@ -127,20 +127,20 @@ echo DIGITALOCEAN_ACCESS_TOKEN=test-digitalocean
 
     # An existing OpenCode command must suppress its package install.
     Copy-Item (Join-Path $fixtureBin 'opencode-template.cmd') (Join-Path $fixtureBin 'opencode.cmd')
-    New-Item -ItemType Directory -Force -Path (Join-Path $fixtureAppData 'opencode') | Out-Null
-    '{"plugin":[]}' | Set-Content -LiteralPath (Join-Path $fixtureAppData 'opencode\opencode.json') -Encoding utf8
+    New-Item -ItemType Directory -Force -Path (Join-Path $env:HOME '.config\opencode') | Out-Null
+    '{"plugin":[]}' | Set-Content -LiteralPath (Join-Path $env:HOME '.config\opencode\opencode.jsonc') -Encoding utf8
     Set-Content -LiteralPath $fixtureLog -Value '' -Encoding ascii
     & (Join-Path $root 'install.ps1') -Apps opencode -Yes
     if (Select-String -LiteralPath $fixtureLog -Pattern '^package-(start|complete):' -Quiet) { throw 'Existing OpenCode command triggered package installation' }
-    if (-not (Test-Path (Join-Path $fixtureAppData 'opencode\opencode.json'))) { throw 'Windows OpenCode setup declaration was not executed' }
+    if (-not (Test-Path (Join-Path $env:HOME '.config\opencode\opencode.jsonc'))) { throw 'Windows OpenCode setup declaration was not executed' }
 
     # With both commands missing, scoop is the preferred available manager.
     Remove-Item -LiteralPath (Join-Path $fixtureBin 'opencode.cmd')
     Set-Content -LiteralPath $fixtureLog -Value '' -Encoding ascii
     Remove-Item -LiteralPath $fixtureAppData -Recurse -Force
     New-Item -ItemType Directory -Force -Path $fixtureAppData | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $fixtureAppData 'opencode') | Out-Null
-    '{"plugin":[]}' | Set-Content -LiteralPath (Join-Path $fixtureAppData 'opencode\opencode.json') -Encoding utf8
+    New-Item -ItemType Directory -Force -Path (Join-Path $env:HOME '.config\opencode') | Out-Null
+    '{"plugin":[]}' | Set-Content -LiteralPath (Join-Path $env:HOME '.config\opencode\opencode.jsonc') -Encoding utf8
     & (Join-Path $root 'install.ps1') -Apps opencode -Yes
     $events = @(Get-Content -LiteralPath $fixtureLog)
     if ('package-complete:opencode' -notin $events) { throw 'Preferred OpenCode package was not installed' }
@@ -150,7 +150,7 @@ echo DIGITALOCEAN_ACCESS_TOKEN=test-digitalocean
 } finally {
     $env:Path = $oldPath
     foreach ($name in @('SCOOP_FIXTURE_BIN', 'SCOOP_FIXTURE_LOG')) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
-    if ($null -eq $oldAppData) { Remove-Item Env:APPDATA -ErrorAction SilentlyContinue } else { $env:APPDATA = $oldAppData }
+    if ($null -eq $oldHome) { Remove-Item Env:HOME -ErrorAction SilentlyContinue } else { $env:HOME = $oldHome }
     if ($null -eq $oldLocalAppData) { Remove-Item Env:LOCALAPPDATA -ErrorAction SilentlyContinue } else { $env:LOCALAPPDATA = $oldLocalAppData }
     if ($null -eq $oldDotfilesHome) { Remove-Item Env:DOTFILES_HOME -ErrorAction SilentlyContinue } else { $env:DOTFILES_HOME = $oldDotfilesHome }
     if ($null -eq $oldSecretFile) { Remove-Item Env:DOTFILES_SECRETS_FILE -ErrorAction SilentlyContinue } else { $env:DOTFILES_SECRETS_FILE = $oldSecretFile }

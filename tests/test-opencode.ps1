@@ -34,16 +34,16 @@ if ('package=jq|winget:jqlang.jq' -notin $module) { throw 'jq WinGet package dec
 if ('package=jq|scoop:jq' -notin $module) { throw 'jq Scoop package declaration missing' }
 
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('dotfiles-opencode-' + [guid]::NewGuid())
-$configRoot = Join-Path $testRoot 'appdata'
-$configDir = Join-Path $configRoot 'opencode'
-$configFile = Join-Path $configDir 'opencode.json'
+$configRoot = Join-Path $testRoot 'home'
+$configDir = Join-Path $configRoot '.config\opencode'
+$configFile = Join-Path $configDir 'opencode.jsonc'
 $secretValues = @{
     OPENROUTER_API_KEY = 'openrouter-test-secret'
     AZURE_API_KEY = 'azure-test-secret'
     AZURE_RESOURCE_NAME = 'azure-resource-test'
     DIGITALOCEAN_ACCESS_TOKEN = 'digitalocean-test-secret'
 }
-$oldAppData = $env:APPDATA
+$oldHome = $env:HOME
 $oldSecrets = @{}
 foreach ($name in $secretValues.Keys) {
     $oldSecrets[$name] = [Environment]::GetEnvironmentVariable($name)
@@ -64,7 +64,8 @@ try {
             'superpowers@git+https://github.com/obra/superpowers.git'
         )
     } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $configFile -Encoding utf8
-    $env:APPDATA = $configRoot
+    (Get-Content -LiteralPath $configFile -Raw).Replace('"preserved": true', '"preserved": true // JSONC comment') | Set-Content -LiteralPath $configFile -Encoding utf8
+    $env:HOME = $configRoot
 
     New-Item -ItemType Directory -Path (Join-Path $themeServer 'themes\frappe'), (Join-Path $themeServer 'themes\mocha') -Force | Out-Null
     @{ tree = @(
@@ -172,7 +173,7 @@ try {
     $credentialsAfterInvalid = @('openrouter-api-key', 'azure-api-key', 'azure-resource-name', 'digitalocean-access-token') | ForEach-Object { "${_}:$((Get-Content (Join-Path $configDir $_) -Raw))" }
     if ([string]::Join('|', $credentialsAfterInvalid) -ne [string]::Join('|', $credentialsBeforeInvalid)) { throw 'Credentials changed after invalid JSON' }
 } finally {
-    if ($null -eq $oldAppData) { Remove-Item Env:APPDATA -ErrorAction SilentlyContinue } else { $env:APPDATA = $oldAppData }
+    if ($null -eq $oldHome) { Remove-Item Env:HOME -ErrorAction SilentlyContinue } else { $env:HOME = $oldHome }
     foreach ($name in $secretValues.Keys) {
         if ($null -eq $oldSecrets[$name]) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue } else { Set-Item "Env:$name" $oldSecrets[$name] }
     }

@@ -109,6 +109,7 @@ $themeApiUrl = if ($env:OPENCODE_THEME_API_URL) { $env:OPENCODE_THEME_API_URL } 
 $themeRawUrl = if ($env:OPENCODE_THEME_RAW_URL) { $env:OPENCODE_THEME_RAW_URL } else { 'https://raw.githubusercontent.com/catppuccin/opencode/main' }
 $themeTemp = Join-Path $configDir ('.themes.' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $themeTemp -Force | Out-Null
+Write-Output 'Fetching latest Catppuccin OpenCode theme list...'
 $themeApi = [Uri]$themeApiUrl
 $tree = if ($themeApi.IsFile) {
     Get-Content -LiteralPath $themeApi.LocalPath -Raw | ConvertFrom-Json
@@ -120,7 +121,10 @@ $themePaths = @($tree.tree | Where-Object {
 } | ForEach-Object { [string]$_.path })
 if ($themePaths.Count -eq 0) { throw 'No Catppuccin OpenCode themes discovered' }
 
+$themeIndex = 0
 foreach ($themePath in $themePaths) {
+    $themeIndex++
+    Write-Output "Fetching Catppuccin theme $themeIndex/$($themePaths.Count): $themePath"
     $themeFile = Join-Path $themeTemp ($themePath -replace '/', [IO.Path]::DirectorySeparatorChar)
     New-Item -ItemType Directory -Path (Split-Path $themeFile -Parent) -Force | Out-Null
     $themeUri = [Uri]($themeRawUrl.TrimEnd('/') + '/' + $themePath)

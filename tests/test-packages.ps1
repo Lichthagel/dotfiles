@@ -64,4 +64,7 @@ $installer = [string]::Join("`n", (Get-Content (Join-Path $root 'install.ps1')))
 if ($installer -match 'Install-Mise|https://mise\.run') { throw 'mise-specific bootstrap logic remains in the installer' }
 if ($installer -notmatch 'Resolve-ModulePhases') { throw 'generic module phase resolver missing' }
 if ($installer -match 'return if') { throw 'PowerShell provider resolver uses invalid return-if syntax' }
+$opencodeModule = Get-Content (Join-Path $root 'modules\opencode\module.conf')
+if ('setup=windows:opencode/setup.ps1' -notin $opencodeModule) { throw 'OpenCode setup declaration was not discovered' }
+if ($installer -match '(?i)opencode|openrouter|azure_api_key|digitalocean|theme|mcp|plugin') { throw 'PowerShell installer contains OpenCode-specific setup logic' }
 Write-Output 'PowerShell package tests passed'

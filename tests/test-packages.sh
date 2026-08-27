@@ -54,6 +54,90 @@ grep -Fq 'dependency=age|apt:age' "$ROOT/modules/dependencies.conf" || failures=
 grep -Fq 'dependency=age|winget:FiloSottile.age' "$ROOT/modules/dependencies.conf" || failures=$((failures + 1))
 grep -Fq -- '--yes' "$ROOT/install.sh" || failures=$((failures + 1))
 
+# Keep the OpenCode package/setup contract isolated from the host environment.
+opencode_fixture="$(mktemp -d)"
+opencode_log="$opencode_fixture/events.log"
+mkdir -p "$opencode_fixture/bin" "$opencode_fixture/home" "$opencode_fixture/config" "$opencode_fixture/state"
+cat > "$opencode_fixture/bin/brew" <<'EOF'
+#!/usr/bin/env bash
+set -u
+case "$1 ${2:-} ${3:-}" in
+    'list --versions '* )
+        case "${3:-}" in
+            anomalyco/tap/opencode) [ -e "$OPENCODE_FIXTURE_BIN/opencode" ] ;;
+            jq) [ -e "$OPENCODE_FIXTURE_BIN/jq" ] ;;
+            *) exit 1 ;;
+        esac
+        exit $?
+        ;;
+    'install '* )
+        printf 'package:%s\n' "$2" >> "$OPENCODE_FIXTURE_LOG"
+        case "$2" in
+            jq) printf '#!/usr/bin/env bash\nprintf "setup:jq\\n" >> "$OPENCODE_FIXTURE_LOG"\nprintf "{}\\n"\n' > "$OPENCODE_FIXTURE_BIN/jq"; chmod +x "$OPENCODE_FIXTURE_BIN/jq" ;;
+            anomalyco/tap/opencode) printf '#!/usr/bin/env bash\nexit 0\n' > "$OPENCODE_FIXTURE_BIN/opencode"; chmod +x "$OPENCODE_FIXTURE_BIN/opencode" ;;
+        esac
+        ;;
+esac
+EOF
+cat > "$opencode_fixture/bin/dpkg-query" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+cat > "$opencode_fixture/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+"$@"
+EOF
+cat > "$opencode_fixture/bin/run0" <<'EOF'
+#!/usr/bin/env bash
+"$@"
+EOF
+cat > "$opencode_fixture/bin/age" <<'EOF'
+#!/usr/bin/env bash
+printf 'OPENROUTER_API_KEY=test-openrouter\nAZURE_API_KEY=test-azure\nAZURE_RESOURCE_NAME=test-resource\nDIGITALOCEAN_ACCESS_TOKEN=test-digitalocean\n'
+EOF
+cat > "$opencode_fixture/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+    *tree.json*) printf '{"tree":[{"path":"themes/test.json","type":"blob"}]}\n' ;;
+    *) printf '{"theme":"test"}\n' ;;
+esac
+EOF
+cat > "$opencode_fixture/bin/mktemp" <<'EOF'
+#!/usr/bin/env bash
+exec /usr/bin/mktemp "$@"
+EOF
+chmod +x "$opencode_fixture/bin"/*
+for command in bash cat chmod cp date dirname env find grep head ln mkdir mv rm sort awk stat wc tail cut; do
+    command_path="$(type -P "$command" || true)"
+    [ -n "$command_path" ] && ln -s "$command_path" "$opencode_fixture/bin/$command"
+done
+printf 'encrypted fixture\n' > "$opencode_fixture/secrets.env.age"
+
+# A pre-existing command is reported as installed by the fake manager.
+printf '#!/usr/bin/env bash\nexit 0\n' > "$opencode_fixture/bin/opencode"
+chmod +x "$opencode_fixture/bin/opencode"
+: > "$opencode_log"
+PATH="$opencode_fixture/bin" HOME="$opencode_fixture/home" XDG_CONFIG_HOME="$opencode_fixture/config" XDG_STATE_HOME="$opencode_fixture/state" \
+    OPENCODE_FIXTURE_BIN="$opencode_fixture/bin" OPENCODE_FIXTURE_LOG="$opencode_log" AGE_IDENTITY='fixture-age-key' DOTFILES_SECRETS_FILE="$opencode_fixture/secrets.env.age" \
+    bash "$ROOT/install.sh" --apps opencode --yes >/dev/null || failures=$((failures + 1))
+if grep -Fq 'anomalyco/tap/opencode' "$opencode_log"; then
+    printf 'FAIL: existing OpenCode command triggered a package install\n' >&2
+    failures=$((failures + 1))
+fi
+
+# Without OpenCode, brew is the preferred available manager and all package
+# commands must complete before the setup hook needs jq.
+rm -f "$opencode_fixture/bin/opencode" "$opencode_fixture/bin/jq"
+: > "$opencode_log"
+PATH="$opencode_fixture/bin" HOME="$opencode_fixture/home" XDG_CONFIG_HOME="$opencode_fixture/config" XDG_STATE_HOME="$opencode_fixture/state-missing" \
+    OPENCODE_FIXTURE_BIN="$opencode_fixture/bin" OPENCODE_FIXTURE_LOG="$opencode_log" AGE_IDENTITY='fixture-age-key' DOTFILES_SECRETS_FILE="$opencode_fixture/secrets.env.age" \
+    bash "$ROOT/install.sh" --apps opencode --yes >/dev/null || failures=$((failures + 1))
+grep -Fxq 'package:anomalyco/tap/opencode' "$opencode_log" || { printf 'FAIL: preferred OpenCode package was not installed\n' >&2; failures=$((failures + 1)); }
+grep -Fxq 'package:jq' "$opencode_log" || { printf 'FAIL: jq package was not installed\n' >&2; failures=$((failures + 1)); }
+[ -x "$opencode_fixture/bin/jq" ] || { printf 'FAIL: jq was unavailable to setup\n' >&2; failures=$((failures + 1)); }
+[ "$(grep -n '^package:' "$opencode_log" | tail -n 1 | cut -d: -f1)" -lt "$(grep -n '^setup:jq' "$opencode_log" | head -n 1 | cut -d: -f1)" ] || { printf 'FAIL: setup ran before package installation completed\n' >&2; failures=$((failures + 1)); }
+rm -rf "$opencode_fixture"
+
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin" "$tmp/home"

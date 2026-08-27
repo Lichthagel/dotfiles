@@ -41,6 +41,10 @@ Assert-Contains $output 'oh-my-posh - Oh My Posh prompt'
 Assert-True ($output -notmatch '(?m)^shell -') 'legacy shell module is still listed'
 $helpOutput = & (Join-Path $root 'install.ps1') -Help | Out-String
 Assert-Contains $helpOutput 'Usage: install.ps1'
+$opencodeModule = Get-Content (Join-Path $root 'modules\opencode\module.conf')
+Assert-True ('setup=windows:opencode/setup.ps1' -in $opencodeModule) 'OpenCode setup declaration was not discovered'
+$installerText = [string]::Join("`n", (Get-Content (Join-Path $root 'install.ps1')))
+Assert-True ($installerText -notmatch '(?i)opencode|openrouter|azure_api_key|digitalocean|theme|mcp|plugin') 'PowerShell installer contains OpenCode-specific setup logic'
 & pwsh -NoProfile -Command "`$PROFILE = '$profile'; & '$root\install.ps1' -Apps powershell" | Out-Null
 $target = $profile
 Assert-FileExists $target

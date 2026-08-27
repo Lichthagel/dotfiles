@@ -16,6 +16,16 @@ if grep -Fq 'process_atuin_secrets' "$ROOT/install.sh" || grep -Fq 'atuin login'
 if grep -Fq 'Process-AtuinSecrets' "$ROOT/install.ps1" || grep -Fq 'atuin login' "$ROOT/install.ps1" || grep -Fq 'ATUIN_USERNAME' "$ROOT/install.ps1"; then failures=$((failures + 1)); fi
 if grep -Fq 'secrets.sh' "$ROOT/modules/atuin/setup.sh" || grep -Fq 'dotfiles_decrypt_env' "$ROOT/modules/atuin/setup.sh" || grep -Fq 'age --decrypt' "$ROOT/modules/atuin/setup.sh"; then failures=$((failures + 1)); fi
 if grep -Fq 'secrets.ps1' "$ROOT/modules/atuin/setup.ps1" || grep -Fq 'Initialize-DotfilesSecrets' "$ROOT/modules/atuin/setup.ps1" || grep -Fq 'age --decrypt' "$ROOT/modules/atuin/setup.ps1"; then failures=$((failures + 1)); fi
+grep -Fq 'setup=linux:opencode/setup.sh' "$ROOT/modules/opencode/module.conf" || failures=$((failures + 1))
+grep -Fq 'setup=windows:opencode/setup.ps1' "$ROOT/modules/opencode/module.conf" || failures=$((failures + 1))
+grep -Fq 'setup=*) SETUPS+=' "$ROOT/install.sh" || failures=$((failures + 1))
+grep -Fq 'setup=(linux|windows):' "$ROOT/install.ps1" || failures=$((failures + 1))
+for installer in "$ROOT/install.sh" "$ROOT/install.ps1"; do
+    if grep -Eiq 'opencode|openrouter|azure_api_key|digitalocean|theme|mcp|plugin' "$installer"; then
+        printf 'FAIL: installer contains OpenCode-specific setup logic: %s\n' "$installer" >&2
+        failures=$((failures + 1))
+    fi
+done
 
 mkdir -p "$tmp/bin" "$tmp/home/.config/age" "$tmp/state" "$tmp/log"
 printf 'identity\n' > "$tmp/home/.config/age/keys.txt"

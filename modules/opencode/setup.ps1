@@ -6,11 +6,14 @@ $requiredSecrets = @(
     'AZURE_RESOURCE_NAME'
     'DIGITALOCEAN_ACCESS_TOKEN'
 )
-foreach ($name in $requiredSecrets) {
-    if ([string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($name))) {
-        throw "Missing required OpenCode secret: $name"
+$configuredSecrets = @($requiredSecrets | Where-Object { -not [string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($_)) })
+if ($configuredSecrets.Count -gt 0 -and $configuredSecrets.Count -lt $requiredSecrets.Count) {
+    foreach ($name in $requiredSecrets | Where-Object { $_ -notin $configuredSecrets }) {
+        Write-Error "Missing required OpenCode secret: $name"
     }
+    throw 'OpenCode provider secrets are incomplete.'
 }
+$configureProviders = $configuredSecrets.Count -eq $requiredSecrets.Count
 
 $userHome = if ($env:HOME) { $env:HOME } else { $HOME }
 $configDir = Join-Path $userHome '.config\opencode'
@@ -103,26 +106,30 @@ try {
         [System.IO.File]::WriteAllText($temp, $Value, [System.Text.UTF8Encoding]::new($false))
         Protect-SecretFile -Path $temp
     }
-    Stage-Secret 'openrouter-api-key' $env:OPENROUTER_API_KEY
-    Stage-Secret 'azure-api-key' $env:AZURE_API_KEY
-    Stage-Secret 'azure-resource-name' $env:AZURE_RESOURCE_NAME
-    Stage-Secret 'digitalocean-access-token' $env:DIGITALOCEAN_ACCESS_TOKEN
-
-if (-not $config.PSObject.Properties['provider']) {
-    $config | Add-Member -MemberType NoteProperty -Name provider -Value ([pscustomobject]@{})
-}
-$config.provider | Add-Member -MemberType NoteProperty -Name openrouter -Value ([pscustomobject]@{
-    options = [pscustomobject]@{ apiKey = ('{file:' + (Join-Path $configDir 'openrouter-api-key') + '}') }
-}) -Force
-$config.provider | Add-Member -MemberType NoteProperty -Name azure -Value ([pscustomobject]@{
-    options = [pscustomobject]@{
-        apiKey = ('{file:' + (Join-Path $configDir 'azure-api-key') + '}')
-        resourceName = ('{file:' + (Join-Path $configDir 'azure-resource-name') + '}')
+    if ($configureProviders) {
+        Stage-Secret 'openrouter-api-key' $env:OPENROUTER_API_KEY
+        Stage-Secret 'azure-api-key' $env:AZURE_API_KEY
+        Stage-Secret 'azure-resource-name' $env:AZURE_RESOURCE_NAME
+        Stage-Secret 'digitalocean-access-token' $env:DIGITALOCEAN_ACCESS_TOKEN
     }
-}) -Force
-$config.provider | Add-Member -MemberType NoteProperty -Name digitalocean -Value ([pscustomobject]@{
-    options = [pscustomobject]@{ apiKey = ('{file:' + (Join-Path $configDir 'digitalocean-access-token') + '}') }
-}) -Force
+
+if ($configureProviders) {
+    if (-not $config.PSObject.Properties['provider']) {
+        $config | Add-Member -MemberType NoteProperty -Name provider -Value ([pscustomobject]@{})
+    }
+    $config.provider | Add-Member -MemberType NoteProperty -Name openrouter -Value ([pscustomobject]@{
+        options = [pscustomobject]@{ apiKey = ('{file:' + (Join-Path $configDir 'openrouter-api-key') + '}') }
+    }) -Force
+    $config.provider | Add-Member -MemberType NoteProperty -Name azure -Value ([pscustomobject]@{
+        options = [pscustomobject]@{
+            apiKey = ('{file:' + (Join-Path $configDir 'azure-api-key') + '}')
+            resourceName = ('{file:' + (Join-Path $configDir 'azure-resource-name') + '}')
+        }
+    }) -Force
+    $config.provider | Add-Member -MemberType NoteProperty -Name digitalocean -Value ([pscustomobject]@{
+        options = [pscustomobject]@{ apiKey = ('{file:' + (Join-Path $configDir 'digitalocean-access-token') + '}') }
+    }) -Force
+}
 
 if (-not $config.PSObject.Properties['mcp']) {
     $config | Add-Member -MemberType NoteProperty -Name mcp -Value ([pscustomobject]@{})

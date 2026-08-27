@@ -107,6 +107,14 @@ else
   bash "$setup" || failures=$((failures + 1))
   [ "$(jq '[.plugin[] | select(. == "superpowers@git+https://github.com/obra/superpowers.git")] | length' "$config")" -eq 1 ] || failures=$((failures + 1))
 
+  config_before_no_secrets="$(cat "$config")"
+  credentials_before_no_secrets="$(for credential in openrouter-api-key azure-api-key azure-resource-name digitalocean-access-token; do printf '%s:' "$credential"; cat "$config_dir/$credential"; printf '\n'; done)"
+  unset OPENROUTER_API_KEY AZURE_API_KEY AZURE_RESOURCE_NAME DIGITALOCEAN_ACCESS_TOKEN
+  bash "$setup" || failures=$((failures + 1))
+  [ "$(cat "$config")" = "$config_before_no_secrets" ] || failures=$((failures + 1))
+  [ "$(for credential in openrouter-api-key azure-api-key azure-resource-name digitalocean-access-token; do printf '%s:' "$credential"; cat "$config_dir/$credential"; printf '\n'; done)" = "$credentials_before_no_secrets" ] || failures=$((failures + 1))
+  export OPENROUTER_API_KEY='openrouter-test-secret' AZURE_API_KEY='azure-test-secret' AZURE_RESOURCE_NAME='azure-resource-test' DIGITALOCEAN_ACCESS_TOKEN='digitalocean-test-secret'
+
    config_before="$(cat "$config")"
    credentials_before_missing="$(for credential in openrouter-api-key azure-api-key azure-resource-name digitalocean-access-token; do printf '%s:' "$credential"; cat "$config_dir/$credential"; printf '\n'; done)"
    unset AZURE_API_KEY

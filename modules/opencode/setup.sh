@@ -8,12 +8,17 @@ required_secrets=(
   DIGITALOCEAN_ACCESS_TOKEN
 )
 
+configured_secrets=0
 for secret_name in "${required_secrets[@]}"; do
-  if [[ -z "${!secret_name:-}" ]]; then
-    printf 'Missing required OpenCode secret: %s\n' "$secret_name" >&2
-    exit 1
-  fi
+  [[ -n "${!secret_name:-}" ]] && configured_secrets=$((configured_secrets + 1))
 done
+if [[ "$configured_secrets" -ne 0 && "$configured_secrets" -ne "${#required_secrets[@]}" ]]; then
+  for secret_name in "${required_secrets[@]}"; do
+    [[ -z "${!secret_name:-}" ]] && printf 'Missing required OpenCode secret: %s\n' "$secret_name" >&2
+  done
+  exit 1
+fi
+configure_providers=$((configured_secrets == ${#required_secrets[@]}))
 
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
 mkdir -p "$config_dir"
@@ -44,10 +49,12 @@ stage_credential() {
   chmod 600 "$credential_tmp/$name"
 }
 
-stage_credential openrouter-api-key "$OPENROUTER_API_KEY"
-stage_credential azure-api-key "$AZURE_API_KEY"
-stage_credential azure-resource-name "$AZURE_RESOURCE_NAME"
-stage_credential digitalocean-access-token "$DIGITALOCEAN_ACCESS_TOKEN"
+if [[ "$configure_providers" -eq 1 ]]; then
+  stage_credential openrouter-api-key "$OPENROUTER_API_KEY"
+  stage_credential azure-api-key "$AZURE_API_KEY"
+  stage_credential azure-resource-name "$AZURE_RESOURCE_NAME"
+  stage_credential digitalocean-access-token "$DIGITALOCEAN_ACCESS_TOKEN"
+fi
 
 config_tmp="$(mktemp "$config_dir/.opencode.json.XXXXXX")"
 jq_args=(
@@ -57,11 +64,14 @@ jq_args=(
   --arg digitalocean "$config_dir/digitalocean-access-token" \
   --arg plugin_name 'superpowers@git+https://github.com/obra/superpowers.git'
 )
-jq_filter=' .provider.openrouter = {options: {apiKey: ("{file:" + $openrouter + "}")}}
-   | .provider.azure = {options: {apiKey: ("{file:" + $azure_key + "}"), resourceName: ("{file:" + $azure_resource + "}")}}
-   | .provider.digitalocean = {options: {apiKey: ("{file:" + $digitalocean + "}")}}
-   | .mcp."ddg-search" = {type: "local", command: ["uvx", "duckduckgo-mcp-server"], environment: {DDG_SAFE_SEARCH: "OFF"}}
-   | .plugin = [(.plugin // [])[] | select(. != $plugin_name)] + [$plugin_name]'
+jq_filter=' .mcp."ddg-search" = {type: "local", command: ["uvx", "duckduckgo-mcp-server"], environment: {DDG_SAFE_SEARCH: "OFF"}}
+    | .plugin = [(.plugin // [])[] | select(. != $plugin_name)] + [$plugin_name]'
+if [[ "$configure_providers" -eq 1 ]]; then
+  jq_filter=' .provider.openrouter = {options: {apiKey: ("{file:" + $openrouter + "}")}}
+     | .provider.azure = {options: {apiKey: ("{file:" + $azure_key + "}"), resourceName: ("{file:" + $azure_resource + "}")}}
+     | .provider.digitalocean = {options: {apiKey: ("{file:" + $digitalocean + "}")}}
+     | '"$jq_filter"
+fi
 if [[ -f "$config_file" ]]; then
   jq "${jq_args[@]}" "$jq_filter" "$config_file" > "$config_tmp"
 else
@@ -92,10 +102,12 @@ while IFS= read -r theme_path; do
 done < "$theme_paths_tmp"
 
 # All required work is staged before any managed output is replaced.
-for credential in "$credential_tmp"/*; do
-  credential_name="${credential##*/}"
-  mv -f "$credential" "$config_dir/$credential_name"
-done
+if [[ "$configure_providers" -eq 1 ]]; then
+  for credential in "$credential_tmp"/*; do
+    credential_name="${credential##*/}"
+    mv -f "$credential" "$config_dir/$credential_name"
+  done
+fi
 mv -f "$config_tmp" "$config_file"
 config_tmp=''
 mkdir -p "$themes_dir"

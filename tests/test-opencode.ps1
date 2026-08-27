@@ -126,6 +126,15 @@ try {
     $result = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
     if (@($result.plugin | Where-Object { $_ -eq $pluginName }).Count -ne 1) { throw 'Superpowers plugin is not idempotent' }
 
+    $configBeforeNoSecrets = Get-Content -LiteralPath $configFile -Raw
+    $credentialsBeforeNoSecrets = @('openrouter-api-key', 'azure-api-key', 'azure-resource-name', 'digitalocean-access-token') | ForEach-Object { "${_}:$((Get-Content (Join-Path $configDir $_) -Raw))" }
+    $savedSecrets = @{}
+    foreach ($name in $secretValues.Keys) { $savedSecrets[$name] = [Environment]::GetEnvironmentVariable($name); Remove-Item "Env:$name" }
+    try { & (Join-Path $root 'modules\opencode\setup.ps1') } finally { foreach ($name in $secretValues.Keys) { [Environment]::SetEnvironmentVariable($name, $savedSecrets[$name], 'Process') } }
+    if ((Get-Content -LiteralPath $configFile -Raw) -ne $configBeforeNoSecrets) { throw 'Provider config changed without secrets' }
+    $credentialsAfterNoSecrets = @('openrouter-api-key', 'azure-api-key', 'azure-resource-name', 'digitalocean-access-token') | ForEach-Object { "${_}:$((Get-Content (Join-Path $configDir $_) -Raw))" }
+    if ([string]::Join('|', $credentialsAfterNoSecrets) -ne [string]::Join('|', $credentialsBeforeNoSecrets)) { throw 'Provider credentials changed without secrets' }
+
     $withoutPlugin = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
     $withoutPlugin.PSObject.Properties.Remove('plugin')
     $withoutPlugin | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $configFile -Encoding utf8

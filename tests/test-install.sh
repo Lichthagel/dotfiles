@@ -16,6 +16,12 @@ grep -Fq 'exec bash "$extracted/install.sh"' "$ROOT/install.sh" || fail_test 'Ba
 grep -Fq 'curl -fsSL https://raw.githubusercontent.com/Lichthagel/dotfiles/main/install.sh | sh' "$ROOT/README.md" || fail_test 'Bash published one-liner missing'
 grep -Fq 'irm https://raw.githubusercontent.com/Lichthagel/dotfiles/main/install.ps1 | iex' "$ROOT/README.md" || fail_test 'PowerShell published one-liner missing'
 
+if command -v script >/dev/null 2>&1; then
+    pty_output="$(printf 'q' | script -qec "HOME='$tmp/pty-home' XDG_STATE_HOME='$tmp/pty-state' bash '$ROOT/install.sh'" /dev/null 2>&1)"
+    assert_contains "$pty_output" 'Selection cancelled.'
+    assert_not_contains "$pty_output" 'Interactive selection requires a terminal.'
+fi
+
 if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     read -r install_mode _ <<EOF
 $(git -C "$ROOT" ls-files -s install.sh)

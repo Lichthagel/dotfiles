@@ -31,6 +31,7 @@ requested_apps=""
 apps_provided=0
 list_only=0
 yes_mode=0
+interactive_input_fd=0
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -303,7 +304,7 @@ package_plan() {
     done
     [ "${#PLAN_KEYS[@]}" -gt 0 ] || return 0
     if [ "$yes_mode" -eq 1 ]; then return 0; fi
-    [ -t 0 ] && [ -t 1 ] || { printf 'Package confirmation requires a terminal. Use --yes for noninteractive setup.\n' >&2; return 2; }
+    interactive_terminal_available || { printf 'Package confirmation requires a terminal. Use --yes for noninteractive setup.\n' >&2; return 2; }
     local index=0 key_input option_index current options_array
     while true; do
         printf '\033[2J\033[HPackage plan (Up/Down move, Left/Right manager, Space toggle, Enter install, b back):\n'
@@ -312,9 +313,9 @@ package_plan() {
             [ "$i" -eq "$index" ] && pointer='>' || pointer=' '
             printf '%s [%s] %s -> %s\n' "$pointer" "$marker" "${PLAN_NAMES[$i]}" "${PLAN_MANAGERS[$i]}"
         done
-        IFS= read -rsn1 key_input
+        IFS= read -u "$interactive_input_fd" -rsn1 key_input
         case "$key_input" in
-            $'\x1b') IFS=read -rsn2 key_input; case "$key_input" in '[A') [ "$index" -gt 0 ] && index=$((index-1)) ;; '[B') [ "$index" -lt $((${#PLAN_NAMES[@]}-1)) ] && index=$((index+1)) ;; '[C'|'[D') IFS=',' read -ra options_array <<< "${PLAN_OPTIONS[$index]}"; option_index=0; for i in "${!options_array[@]}"; do [ "${options_array[$i]%%:*}" = "${PLAN_MANAGERS[$index]}" ] && option_index=$i; done; [ "$key_input" = '[C' ] && option_index=$(( (option_index + 1) % ${#options_array[@]} )) || option_index=$(( (option_index - 1 + ${#options_array[@]}) % ${#options_array[@]} )); PLAN_MANAGERS[$index]="${options_array[$option_index]%%:*}"; PLAN_PACKAGE_NAMES[$index]="${options_array[$option_index]#*:}" ;; esac ;;
+            $'\x1b') IFS= read -u "$interactive_input_fd" -rsn2 key_input; case "$key_input" in '[A') [ "$index" -gt 0 ] && index=$((index-1)) ;; '[B') [ "$index" -lt $((${#PLAN_NAMES[@]}-1)) ] && index=$((index+1)) ;; '[C'|'[D') IFS=',' read -ra options_array <<< "${PLAN_OPTIONS[$index]}"; option_index=0; for i in "${!options_array[@]}"; do [ "${options_array[$i]%%:*}" = "${PLAN_MANAGERS[$index]}" ] && option_index=$i; done; [ "$key_input" = '[C' ] && option_index=$(( (option_index + 1) % ${#options_array[@]} )) || option_index=$(( (option_index - 1 + ${#options_array[@]}) % ${#options_array[@]} )); PLAN_MANAGERS[$index]="${options_array[$option_index]%%:*}"; PLAN_PACKAGE_NAMES[$index]="${options_array[$option_index]#*:}" ;; esac ;;
             ' ') [ "${PLAN_SELECTED[$index]}" -eq 1 ] && PLAN_SELECTED[$index]=0 || PLAN_SELECTED[$index]=1 ;;
             b) return 3 ;;
             q) return 2 ;;
@@ -402,7 +403,7 @@ interactive_select() {
                 ;;
         esac
     done
-    [ -t 0 ] && [ -t 1 ] || { printf 'Interactive selection requires a terminal. Use --apps for noninteractive setup.\n' >&2; return 2; }
+    interactive_terminal_available || { printf 'Interactive selection requires a terminal. Use --apps for noninteractive setup.\n' >&2; return 2; }
     printf 'Use Up/Down to move, Space to toggle, Enter to confirm.\n'
     while true; do
         printf '\033[2J\033[H'
@@ -413,11 +414,11 @@ interactive_select() {
             [ "$i" -eq "$index" ] && pointer='>' || pointer=' '
             printf '%s [%s] %s - %s\n' "$pointer" "$marker" "${available_modules[$i]}" "${DESCRIPTIONS[${available_modules[$i]}]}"
         done
-        IFS= read -rsn1 key
+        IFS= read -u "$interactive_input_fd" -rsn1 key
         case "$key" in
             $'\x1b')
-                if IFS= read -rsn1 -t 0.05 sequence; then
-                    if [ "$sequence" = '[' ] && IFS= read -rsn1 sequence; then
+                if IFS= read -u "$interactive_input_fd" -rsn1 -t 0.05 sequence; then
+                    if [ "$sequence" = '[' ] && IFS= read -u "$interactive_input_fd" -rsn1 sequence; then
                         case "$sequence" in
                             A) [ "$index" -gt 0 ] && index=$((index - 1)) ;;
                             B) [ "$index" -lt $((${#available_modules[@]} - 1)) ] && index=$((index + 1)) ;;
@@ -440,6 +441,17 @@ interactive_select() {
     for module in "${selected_modules[@]}"; do
         [ -n "$module" ] && requested_apps="${requested_apps:+$requested_apps,}$module"
     done
+}
+
+interactive_terminal_available() {
+    [ -t 1 ] || return 1
+    if [ -t 0 ]; then
+        interactive_input_fd=0
+        return 0
+    fi
+    [ -r /dev/tty ] && [ -w /dev/tty ] || return 1
+    exec 3<>/dev/tty || return 1
+    interactive_input_fd=3
 }
 
 install_maps() {
@@ -512,7 +524,7 @@ for phase_module in "${MODULE_ORDER[@]}"; do
     [ "$package_status" -eq 0 ] || exit "$package_status"
     if [ "${#PLAN_NAMES[@]}" -gt 0 ] && [ "$yes_mode" -eq 0 ]; then
         printf 'Install these packages? [y/N]: '
-        IFS= read -r package_confirmation
+        IFS= read -u "$interactive_input_fd" -r package_confirmation
         case "$package_confirmation" in
             y|Y|yes|YES) ;;
             *) printf 'Package installation declined.\n'; exit 0 ;;

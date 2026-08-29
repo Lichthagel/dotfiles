@@ -103,5 +103,16 @@ if PATH="$tmp/bin:$PATH" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state-missing" AT
     failures=$((failures + 1))
 fi
 
+# A piped one-liner has a non-terminal stdin but still has a controlling TTY.
+# The optional secret flow must prompt on that TTY instead of skipping the bundle.
+if command -v script >/dev/null 2>&1; then
+    mkfifo "$tmp/secret-input"
+    printf 'fixture-age-key\n' > "$tmp/secret-input" &
+    secret_prompt_output="$(script -qec "bash -c 'exec 0<\"$tmp/secret-input\"; export HOME=\"$tmp/no-key-home\"; source \"$ROOT/lib/secrets.sh\"; DOTFILES_SECRET_FILE=\"$tmp/atuin.env.age\" DOTFILES_SECRETS_OPTIONAL=1 dotfiles_decrypt_env; printf \"%s\\n\" \"\$ATUIN_USERNAME\"'" /dev/null 2>&1)"
+    wait
+    printf '%s' "$secret_prompt_output" | grep -Fq 'Age identity file path or key' || failures=$((failures + 1))
+    printf '%s' "$secret_prompt_output" | grep -Fq 'test-user' || failures=$((failures + 1))
+fi
+
 [ "$failures" -eq 0 ] || exit 1
 printf 'secret tests passed\n'

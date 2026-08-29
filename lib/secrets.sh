@@ -15,9 +15,16 @@ dotfiles_decrypt_env() {
         if [ -t 0 ] && [ -t 1 ]; then
             printf 'Age identity file path or key (default not found): '
             IFS= read -r identity_input
-            if [ -z "$identity_input" ] && [ "${DOTFILES_SECRETS_OPTIONAL:-}" = 1 ]; then
-                return 3
-            fi
+        elif [ -t 1 ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+            exec 3<>/dev/tty
+            printf 'Age identity file path or key (default not found): ' >&3
+            IFS= read -u 3 -r identity_input
+            exec 3>&-
+        else
+            printf 'Age identity file not found. Set AGE_IDENTITIES for noninteractive setup.\n' >&2
+            return 1
+        fi
+        if [ -n "$identity_input" ]; then
             if [[ "$identity_input" == AGE-SECRET-KEY-* ]]; then
                 DOTFILES_SECRET_TEMP="$(mktemp -d)"
                 chmod 700 "$DOTFILES_SECRET_TEMP"
@@ -27,9 +34,8 @@ dotfiles_decrypt_env() {
             else
                 identity="$identity_input"
             fi
-        else
-            printf 'Age identity file not found. Set AGE_IDENTITIES for noninteractive setup.\n' >&2
-            return 1
+        elif [ "${DOTFILES_SECRETS_OPTIONAL:-}" = 1 ]; then
+            return 3
         fi
     fi
     [ -f "$identity" ] || { printf 'Age identity file not found.\n' >&2; return 1; }

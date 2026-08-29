@@ -354,7 +354,7 @@ run_module_setup() {
             DOTFILES_SECRET_FILE="${DOTFILES_SECRETS_FILE:-$secret_source}"
             DOTFILES_SECRET_KEYS=''
             identity="${AGE_IDENTITIES:-$HOME/.config/age/keys.txt}"
-            if [ "${SECRETS_OPTIONAL[$module]:-false}" = true ] && [ -z "${AGE_IDENTITY:-}" ] && [ -z "${AGE_IDENTITIES:-}" ] && [ ! -f "$identity" ] && { ! [ -t 0 ] || ! [ -t 1 ]; }; then
+            if [ "${SECRETS_OPTIONAL[$module]:-false}" = true ] && [ -z "${AGE_IDENTITY:-}" ] && [ -z "${AGE_IDENTITIES:-}" ] && [ ! -f "$identity" ] && { ! [ -t 1 ] || ! [ -r /dev/tty ] || ! [ -w /dev/tty ]; }; then
                 DOTFILES_SECRET_FILE=''
             else
                 DOTFILES_SECRETS_OPTIONAL=0

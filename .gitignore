@@ -2,7 +2,6 @@
 .dotfiles-cache/
 .worktrees/
 secrets/*.env
-secrets/opencode.env.age
 
 # Editor and operating-system noise
 .DS_Store

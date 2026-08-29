@@ -11,6 +11,9 @@ grep -Fq 'for file in "$HOME/.config/bashrc.d/"*.bash' "$ROOT/modules/bash/bashr
 grep -Fq 'atuin init' "$ROOT/modules/bash/bashrc" && fail_test 'Bash profile contains Atuin-specific initialization'
 grep -Fq "\$'\\x1b')" "$ROOT/install.sh" || fail_test 'Bash cancellation handling missing'
 grep -Fq 'q)' "$ROOT/install.sh" || fail_test 'Bash q cancellation handling missing'
+grep -Fq 'DOTFILES_REPO_URL:-https://github.com/Lichthagel/dotfiles' "$ROOT/install.sh" || fail_test 'Bash piped bootstrap default missing'
+grep -Fq 'curl -fsSL https://raw.githubusercontent.com/Lichthagel/dotfiles/main/install.sh | sh' "$ROOT/README.md" || fail_test 'Bash published one-liner missing'
+grep -Fq 'irm https://raw.githubusercontent.com/Lichthagel/dotfiles/main/install.ps1 | iex' "$ROOT/README.md" || fail_test 'PowerShell published one-liner missing'
 
 output="$(HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" bash "$ROOT/install.sh" --list)"
 assert_contains "$output" 'git - Git configuration'

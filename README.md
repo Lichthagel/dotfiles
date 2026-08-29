@@ -27,17 +27,17 @@ either platform:
 .\install.ps1 -Apps opencode
 ```
 
-For a published repository, use the native one-liner after replacing the URL with its canonical GitHub URL. The installer downloads the repository archive when run from a pipe:
+For this published repository, use the native one-liner. The installer downloads the repository archive when run from a pipe:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/OWNER/dotfiles/main/install.sh | DOTFILES_REPO_URL=https://github.com/OWNER/dotfiles sh
+curl -fsSL https://raw.githubusercontent.com/Lichthagel/dotfiles/main/install.sh | sh
 ```
 
 ```powershell
-& { $env:DOTFILES_REPO_URL = 'https://github.com/OWNER/dotfiles'; irm https://raw.githubusercontent.com/OWNER/dotfiles/main/install.ps1 | iex }
+irm https://raw.githubusercontent.com/Lichthagel/dotfiles/main/install.ps1 | iex
 ```
 
-The `DOTFILES_REPO_URL` value is required for piped execution because the script itself is hosted separately from the module files. The safest automated form is to clone the repository and run the entry point from that checkout.
+The installers use the published repository URL by default for piped execution. Set `DOTFILES_REPO_URL` to override it when testing a fork or another repository. The safest automated form is to clone the repository and run the entry point from that checkout.
 
 ## Options
 

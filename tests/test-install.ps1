@@ -28,6 +28,11 @@ $temp = Join-Path ([System.IO.Path]::GetTempPath()) ('dotfiles-test-' + [guid]::
 $testHome = Join-Path $temp 'home'
 $local = Join-Path $temp 'local'
 $profile = Join-Path $temp 'profile-drive\Documents\PowerShell\Microsoft.PowerShell_profile.ps1'
+$bashInstaller = Get-Content (Join-Path $root 'install.sh') -Raw
+Assert-True ($bashInstaller -match 'DOTFILES_REPO_URL:-https://github\.com/Lichthagel/dotfiles') 'Bash piped bootstrap default missing'
+$readme = Get-Content (Join-Path $root 'README.md') -Raw
+Assert-True ($readme -match 'curl -fsSL https://raw\.githubusercontent\.com/Lichthagel/dotfiles/main/install\.sh \| sh') 'Bash published one-liner missing'
+Assert-True ($readme -match 'irm https://raw\.githubusercontent\.com/Lichthagel/dotfiles/main/install\.ps1 \| iex') 'PowerShell published one-liner missing'
 New-Item -ItemType Directory -Force -Path $testHome | Out-Null
 $env:LOCALAPPDATA = $local
 $env:DOTFILES_HOME = $testHome

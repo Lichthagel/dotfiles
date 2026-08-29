@@ -12,12 +12,12 @@ $DotfilesHome = if ($env:DOTFILES_HOME) { $env:DOTFILES_HOME } else { $HOME }
 $BackupRoot = Join-Path ($env:LOCALAPPDATA ?? (Join-Path $DotfilesHome 'AppData\Local')) 'dotfiles\backups'
 
 if (-not (Test-Path (Join-Path $Root 'modules\manifest.conf'))) {
-    if (-not $env:DOTFILES_REPO_URL) { throw 'Set DOTFILES_REPO_URL when running install.ps1 from a pipe.' }
+    $repoUrl = if ($env:DOTFILES_REPO_URL) { $env:DOTFILES_REPO_URL } else { 'https://github.com/Lichthagel/dotfiles' }
     $bootstrapDir = Join-Path ([System.IO.Path]::GetTempPath()) ('dotfiles-' + [guid]::NewGuid())
     New-Item -ItemType Directory -Force -Path $bootstrapDir | Out-Null
     try {
         $archive = Join-Path $bootstrapDir 'repo.zip'
-        Invoke-WebRequest -Uri "$($env:DOTFILES_REPO_URL)/archive/refs/heads/main.zip" -OutFile $archive
+        Invoke-WebRequest -Uri "$repoUrl/archive/refs/heads/main.zip" -OutFile $archive
         Expand-Archive -LiteralPath $archive -DestinationPath $bootstrapDir
         $extracted = Get-ChildItem -LiteralPath $bootstrapDir -Directory | Where-Object { $_.Name -ne 'repo.zip' } | Select-Object -First 1
         if (-not $extracted) { throw 'Repository archive did not contain a root directory.' }

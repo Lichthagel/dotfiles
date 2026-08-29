@@ -16,8 +16,7 @@ script_dir() {
 ROOT="$(script_dir)"
 
 if [ ! -f "$ROOT/modules/manifest.conf" ]; then
-    repo_url="${DOTFILES_REPO_URL:-}"
-    [ -n "$repo_url" ] || { printf 'Set DOTFILES_REPO_URL when running install.sh from a pipe.\n' >&2; exit 2; }
+    repo_url="${DOTFILES_REPO_URL:-https://github.com/Lichthagel/dotfiles}"
     bootstrap_dir="$(mktemp -d)"
     trap 'rm -rf "$bootstrap_dir"' EXIT
     curl -fsSL "$repo_url/archive/refs/heads/main.tar.gz" -o "$bootstrap_dir/repo.tar.gz" || exit 1

@@ -12,8 +12,26 @@ grep -Fq 'atuin init' "$ROOT/modules/bash/bashrc" && fail_test 'Bash profile con
 grep -Fq "\$'\\x1b')" "$ROOT/install.sh" || fail_test 'Bash cancellation handling missing'
 grep -Fq 'q)' "$ROOT/install.sh" || fail_test 'Bash q cancellation handling missing'
 grep -Fq 'DOTFILES_REPO_URL:-https://github.com/Lichthagel/dotfiles' "$ROOT/install.sh" || fail_test 'Bash piped bootstrap default missing'
+grep -Fq 'exec bash "$extracted/install.sh"' "$ROOT/install.sh" || fail_test 'Bash piped bootstrap exec fallback missing'
 grep -Fq 'curl -fsSL https://raw.githubusercontent.com/Lichthagel/dotfiles/main/install.sh | sh' "$ROOT/README.md" || fail_test 'Bash published one-liner missing'
 grep -Fq 'irm https://raw.githubusercontent.com/Lichthagel/dotfiles/main/install.ps1 | iex' "$ROOT/README.md" || fail_test 'PowerShell published one-liner missing'
+
+if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    read -r install_mode _ <<EOF
+$(git -C "$ROOT" ls-files -s install.sh)
+EOF
+    [ "$install_mode" = 100755 ] || fail_test 'install.sh is not executable in the git index'
+    for setup_script in $(grep -h '^setup=' "$ROOT"/modules/*/module.conf | sed 's/^[^:]*://'); do
+        case "$setup_script" in
+            *.sh)
+                read -r setup_mode _ <<EOF
+$(git -C "$ROOT" ls-files -s "modules/$setup_script")
+EOF
+                [ "$setup_mode" = 100755 ] || fail_test "setup script is not executable in the git index: $setup_script"
+                ;;
+        esac
+    done
+fi
 
 output="$(HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" bash "$ROOT/install.sh" --list)"
 assert_contains "$output" 'git - Git configuration'

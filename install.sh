@@ -23,7 +23,7 @@ if [ ! -f "$ROOT/modules/manifest.conf" ]; then
     tar -xzf "$bootstrap_dir/repo.tar.gz" -C "$bootstrap_dir" || exit 1
     extracted="$(find "$bootstrap_dir" -mindepth 1 -maxdepth 1 -type d -print -quit)"
     [ -n "$extracted" ] || { printf 'Repository archive did not contain a root directory.\n' >&2; exit 1; }
-    exec "$extracted/install.sh" "$@"
+    exec bash "$extracted/install.sh" "$@"
 fi
 
 BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/backups"

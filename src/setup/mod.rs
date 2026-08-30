@@ -1,8 +1,10 @@
 pub mod atuin;
 pub mod http;
+pub mod jsonc;
+pub mod opencode;
 pub mod providers;
 
-use crate::error::{InstallError, Result};
+use crate::error::Result;
 use crate::model::SetupKind;
 use crate::packages::CommandRunner;
 use crate::platform::PlatformOps;
@@ -23,8 +25,6 @@ pub fn run_setup(kind: SetupKind, context: &SetupContext<'_>) -> Result<()> {
         SetupKind::Homebrew => providers::install_homebrew(context),
         SetupKind::Scoop => providers::install_scoop(context),
         SetupKind::Atuin => atuin::setup_atuin(context),
-        SetupKind::OpenCode => Err(InstallError::Setup(
-            "OpenCode setup is not implemented yet".into(),
-        )),
+        SetupKind::OpenCode => opencode::configure_opencode(context),
     }
 }

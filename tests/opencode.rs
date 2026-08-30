@@ -3,6 +3,7 @@ mod support;
 use std::fs;
 
 use dotfiles::error::InstallError;
+use dotfiles::model::Platform;
 use dotfiles::setup::opencode::{configure_opencode, SUPERPOWERS_PLUGIN};
 use support::opencode::{config_path_is_private, OpenCodeFixture};
 
@@ -17,7 +18,39 @@ fn opencode_is_idempotent_and_does_not_write_secret_values_to_config() {
     assert_eq!(first, second);
     assert_eq!(fixture.plugin_count(SUPERPOWERS_PLUGIN), 1);
     assert_eq!(fixture.value_count_in_config("openrouter-test-secret"), 0);
-    assert_eq!(fixture.read_config()["unrelated"]["keep"], true);
+    let config = fixture.read_config();
+    assert_eq!(
+        config["provider"]["openrouter"]["options"]["apiKey"],
+        format!(
+            "{{file:{}}}",
+            fixture.config_dir().join("openrouter-api-key").display()
+        )
+    );
+    assert_eq!(
+        config["provider"]["azure"]["options"]["apiKey"],
+        format!(
+            "{{file:{}}}",
+            fixture.config_dir().join("azure-api-key").display()
+        )
+    );
+    assert_eq!(
+        config["provider"]["azure"]["options"]["resourceName"],
+        format!(
+            "{{file:{}}}",
+            fixture.config_dir().join("azure-resource-name").display()
+        )
+    );
+    assert_eq!(
+        config["provider"]["digitalocean"]["options"]["apiKey"],
+        format!(
+            "{{file:{}}}",
+            fixture
+                .config_dir()
+                .join("digitalocean-access-token")
+                .display()
+        )
+    );
+    assert_eq!(config["unrelated"]["keep"], true);
     assert_eq!(
         fixture.read_config()["mcp"]["ddg-search"]["command"],
         serde_json::json!(["uvx", "duckduckgo-mcp-server"])
@@ -67,6 +100,43 @@ fn credentials_are_written_protected_and_never_to_config() {
 }
 
 #[test]
+fn explicit_platform_fixtures_use_platform_config_filenames() {
+    for platform in [Platform::Linux, Platform::Windows] {
+        let fixture = OpenCodeFixture::for_platform(platform);
+        configure_opencode(&fixture.context()).unwrap();
+        let expected = if platform == Platform::Windows {
+            "opencode.jsonc"
+        } else {
+            "opencode.json"
+        };
+        assert!(fixture.config_dir().join(expected).exists());
+        assert!(!fixture
+            .config_dir()
+            .join(if platform == Platform::Windows {
+                "opencode.json"
+            } else {
+                "opencode.jsonc"
+            })
+            .exists());
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_fixture_inspects_current_user_dacl() {
+    let fixture = OpenCodeFixture::for_platform_with_secrets(Platform::Windows);
+    configure_opencode(&fixture.context()).unwrap();
+    for name in [
+        "openrouter-api-key",
+        "azure-api-key",
+        "azure-resource-name",
+        "digitalocean-access-token",
+    ] {
+        assert!(config_path_is_private(&fixture.config_dir().join(name)));
+    }
+}
+
+#[test]
 fn no_provider_secrets_leave_existing_provider_configuration_unchanged() {
     let fixture = OpenCodeFixture::with_no_secrets();
     let before = fs::read(fixture.config_file()).unwrap();
@@ -90,6 +160,15 @@ fn partial_provider_secrets_fail_before_any_output_changes() {
     let before = fixture.snapshot_managed_outputs();
     let error = configure_opencode(&fixture.context()).unwrap_err();
     assert!(matches!(error, InstallError::Secret(_)));
+    assert_eq!(fixture.snapshot_managed_outputs(), before);
+    assert!(!fixture.config_dir().exists());
+}
+
+#[test]
+fn malformed_theme_does_not_replace_config_credentials_or_themes() {
+    let fixture = OpenCodeFixture::with_malformed_theme_client();
+    let before = fixture.snapshot_managed_outputs();
+    assert!(configure_opencode(&fixture.context()).is_err());
     assert_eq!(fixture.snapshot_managed_outputs(), before);
 }
 

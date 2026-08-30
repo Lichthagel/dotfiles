@@ -35,8 +35,8 @@ pub struct ThemeTree {
 }
 
 pub fn configure_opencode(context: &SetupContext<'_>) -> Result<()> {
+    let configure_providers = provider_values(context.secrets)?;
     let config_dir = opencode_config_dir(context.platform)?;
-    fs::create_dir_all(&config_dir)?;
     let config_file = config_path(context.platform, &config_dir);
     let mut document = if config_file.exists() {
         let source = fs::read_to_string(&config_file)?;
@@ -45,7 +45,6 @@ pub fn configure_opencode(context: &SetupContext<'_>) -> Result<()> {
         JsoncDocument::empty()
     };
 
-    let configure_providers = provider_values(context.secrets)?;
     update_configuration(document.value_mut(), &config_dir, configure_providers)?;
     let config_bytes = document.to_bytes()?;
     JsoncDocument::parse(std::str::from_utf8(&config_bytes).map_err(|error| {
@@ -57,6 +56,7 @@ pub fn configure_opencode(context: &SetupContext<'_>) -> Result<()> {
     let raw_url =
         std::env::var("OPENCODE_THEME_RAW_URL").unwrap_or_else(|_| THEME_RAW_URL.to_owned());
     let themes = fetch_themes(context, &api_url, &raw_url)?;
+    fs::create_dir_all(&config_dir)?;
 
     let stage_dir = tempfile::tempdir_in(&config_dir).map_err(|error| {
         InstallError::Setup(format!("create OpenCode staging directory: {error}"))

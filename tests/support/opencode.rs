@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 use dotfiles::error::Result;
@@ -35,6 +37,12 @@ impl FakeHttp {
     pub fn failing() -> Self {
         let client = Self::themes();
         *client.fail.lock().unwrap() = Some("theme download failed".into());
+        client
+    }
+
+    pub fn malformed_theme() -> Self {
+        let client = Self::themes();
+        client.set_bytes("frappe", b"{invalid".to_vec());
         client
     }
 
@@ -106,6 +114,14 @@ impl OpenCodeFixture {
         fixture
     }
 
+    pub fn with_malformed_theme_client() -> Self {
+        let fixture = Self::new(FakeHttp::malformed_theme(), Some(all_secrets()));
+        fs::create_dir_all(fixture.config_dir()).unwrap();
+        fs::write(fixture.config_file(), r#"{"unrelated":{"keep":true}}"#).unwrap();
+        fixture.add_existing_themes();
+        fixture
+    }
+
     pub fn with_no_secrets() -> Self {
         let fixture = Self::new(FakeHttp::themes(), None);
         fs::create_dir_all(fixture.config_dir()).unwrap();
@@ -119,30 +135,42 @@ impl OpenCodeFixture {
     }
 
     pub fn with_partial_secrets() -> Self {
-        let fixture = Self::new(
+        Self::new(
             FakeHttp::themes(),
             Some(
                 SecretValues::from_pairs([("OPENROUTER_API_KEY", "openrouter-test-secret")])
                     .unwrap(),
             ),
-        );
-        fs::create_dir_all(fixture.config_dir()).unwrap();
-        fs::write(fixture.config_file(), r#"{"unrelated":{"keep":true}}"#).unwrap();
-        fixture.add_existing_themes();
-        fixture
+        )
     }
 
     fn new(http: FakeHttp, secrets: Option<SecretValues>) -> Self {
+        Self::for_platform_with(http, secrets, current_platform())
+    }
+
+    pub fn for_platform(platform: Platform) -> Self {
+        Self::for_platform_with(FakeHttp::themes(), None, platform)
+    }
+
+    pub fn for_platform_with_secrets(platform: Platform) -> Self {
+        Self::for_platform_with(FakeHttp::themes(), Some(all_secrets()), platform)
+    }
+
+    fn for_platform_with(
+        http: FakeHttp,
+        secrets: Option<SecretValues>,
+        platform: Platform,
+    ) -> Self {
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path().join("home");
         fs::create_dir_all(&home).unwrap();
-        let profile = if cfg!(windows) {
+        let profile = if platform == Platform::Windows {
             Some(home.join("Documents/PowerShell/Microsoft.PowerShell_profile.ps1"))
         } else {
             None
         };
         let context = PathContext::new(home, profile, temp.path().join("state/dotfiles/backups"));
-        let ops: Box<dyn PlatformOps> = platform_ops(context);
+        let ops: Box<dyn PlatformOps> = platform_ops(context, platform);
         Self {
             temp,
             ops,
@@ -161,15 +189,20 @@ impl OpenCodeFixture {
     }
 
     pub fn config_dir(&self) -> PathBuf {
-        self.ops.home_dir().unwrap().join(".config/opencode")
+        self.ops
+            .home_dir()
+            .unwrap()
+            .join(".config")
+            .join("opencode")
     }
 
     pub fn config_file(&self) -> PathBuf {
-        self.config_dir().join(if cfg!(windows) {
-            "opencode.jsonc"
-        } else {
-            "opencode.json"
-        })
+        self.config_dir()
+            .join(if self.ops.platform() == Platform::Windows {
+                "opencode.jsonc"
+            } else {
+                "opencode.json"
+            })
     }
 
     pub fn themes_dir(&self) -> PathBuf {
@@ -283,15 +316,45 @@ impl dotfiles::packages::CommandRunner for NoopRunner {
     }
 }
 
-fn platform_ops(context: PathContext) -> Box<dyn PlatformOps> {
-    #[cfg(unix)]
-    {
-        Box::new(dotfiles::platform::unix::UnixPlatform::new(context))
+struct ScenarioPlatform {
+    context: PathContext,
+    platform: Platform,
+}
+
+impl PlatformOps for ScenarioPlatform {
+    fn platform(&self) -> Platform {
+        self.platform
     }
-    #[cfg(windows)]
-    {
-        Box::new(dotfiles::platform::windows::WindowsPlatform::new(context))
+
+    fn path_context(&self) -> &PathContext {
+        &self.context
     }
+
+    fn replace_file(
+        &self,
+        target: &Path,
+        bytes: &[u8],
+    ) -> Result<dotfiles::platform::BackupRecord> {
+        dotfiles::platform::replace_file_at(&self.context, target, bytes, false)
+    }
+
+    fn set_private_file_permissions(&self, _path: &Path) -> Result<()> {
+        Ok(())
+    }
+}
+
+fn platform_ops(context: PathContext, platform: Platform) -> Box<dyn PlatformOps> {
+    if platform == current_platform() {
+        #[cfg(unix)]
+        if platform == Platform::Linux {
+            return Box::new(dotfiles::platform::unix::UnixPlatform::new(context));
+        }
+        #[cfg(windows)]
+        if platform == Platform::Windows {
+            return Box::new(dotfiles::platform::windows::WindowsPlatform::new(context));
+        }
+    }
+    Box::new(ScenarioPlatform { context, platform })
 }
 
 pub fn current_platform() -> Platform {
@@ -310,7 +373,16 @@ pub fn config_path_is_private(path: &Path) -> bool {
     }
     #[cfg(windows)]
     {
-        let _ = path;
-        return true;
+        let user = String::from_utf8_lossy(&Command::new("whoami").output().unwrap().stdout)
+            .trim()
+            .to_ascii_lowercase();
+        let acl =
+            String::from_utf8_lossy(&Command::new("icacls").arg(path).output().unwrap().stdout)
+                .to_ascii_lowercase();
+        return acl.contains(&user)
+            && acl.contains("(f)")
+            && !acl.contains("everyone")
+            && !acl.contains("builtin\\users")
+            && !acl.contains("authenticated users");
     }
 }

@@ -19,6 +19,8 @@ pub struct FakeRunner {
     atuin_status: Option<bool>,
     calls: Arc<Mutex<Vec<Invocation>>>,
     refreshes: Arc<Mutex<usize>>,
+    refresh_additions: Arc<Mutex<BTreeSet<String>>>,
+    fail_refresh: bool,
 }
 
 impl FakeRunner {
@@ -34,6 +36,8 @@ impl FakeRunner {
             atuin_status: None,
             calls: Arc::new(Mutex::new(Vec::new())),
             refreshes: Arc::new(Mutex::new(0)),
+            refresh_additions: Arc::new(Mutex::new(BTreeSet::new())),
+            fail_refresh: false,
         }
     }
 
@@ -54,11 +58,26 @@ impl FakeRunner {
             atuin_status: None,
             calls: Arc::new(Mutex::new(Vec::new())),
             refreshes: Arc::new(Mutex::new(0)),
+            refresh_additions: Arc::new(Mutex::new(BTreeSet::new())),
+            fail_refresh: false,
         }
     }
 
     pub fn failing_program(mut self, program: &str) -> Self {
         self.fail_programs.insert(program.to_owned());
+        self
+    }
+
+    pub fn refresh_adds(self, program: &str) -> Self {
+        self.refresh_additions
+            .lock()
+            .unwrap()
+            .insert(program.to_owned());
+        self
+    }
+
+    pub fn failing_refresh(mut self) -> Self {
+        self.fail_refresh = true;
         self
     }
 
@@ -197,6 +216,13 @@ impl CommandRunner for FakeRunner {
 
     fn refresh(&self) -> dotfiles::error::Result<()> {
         *self.refreshes.lock().unwrap() += 1;
+        if self.fail_refresh {
+            return Err(dotfiles::error::InstallError::Package(
+                "command lookup refresh failed".into(),
+            ));
+        }
+        let additions = self.refresh_additions.lock().unwrap().clone();
+        self.available.lock().unwrap().extend(additions);
         Ok(())
     }
 

@@ -195,6 +195,14 @@ pub fn ordered_phases<'a>(modules: &[&'a ModuleSpec]) -> Result<Vec<Vec<&'a Modu
 }
 
 pub fn install(request: InstallRequest, context: InstallContext<'_>) -> Result<()> {
+    install_with_registry(request, context, registry::modules())
+}
+
+pub fn install_with_registry(
+    request: InstallRequest,
+    context: InstallContext<'_>,
+    modules: &[ModuleSpec],
+) -> Result<()> {
     if request.modules.is_empty() {
         return Ok(());
     }
@@ -206,7 +214,8 @@ pub fn install(request: InstallRequest, context: InstallContext<'_>) -> Result<(
         )));
     }
 
-    let resolved = resolve_modules(&request.modules, request.platform, context.runner)?;
+    let resolved =
+        resolve_modules_from_registry(&request.modules, request.platform, context.runner, modules)?;
     let resolved_ids = resolved
         .iter()
         .map(|module| module.id.to_owned())
@@ -234,7 +243,12 @@ pub fn install(request: InstallRequest, context: InstallContext<'_>) -> Result<(
                         action.module, action.logical
                     ))
                 })?;
-                context.runner.refresh()?;
+                context.runner.refresh().map_err(|error| {
+                    InstallError::Package(format!(
+                        "{} package {}: command lookup refresh failed: {error}",
+                        action.module, action.logical
+                    ))
+                })?;
             } else {
                 context.terminal.write_line(&format!(
                     "Skipped package {} for module {}; dotfiles were still installed.",

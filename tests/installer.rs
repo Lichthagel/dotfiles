@@ -3,13 +3,50 @@ mod support;
 use std::fs;
 
 use dotfiles::cli::InstallRequest;
-use dotfiles::engine::{install, resolve_modules};
+use dotfiles::engine::{install, install_with_registry, resolve_modules};
 use dotfiles::engine::{ordered_phases, resolve_modules_from_registry};
-use dotfiles::model::{Platform, SetupKind};
-use dotfiles::registry::ModuleSpec;
+use dotfiles::model::{PackageManager, Platform, SetupKind};
+use dotfiles::registry::{MappingSpec, ModuleSpec, PackageSpec};
 use dotfiles::run;
 use support::installer::{test_context, InstallFixture};
 use support::runner::FakeRunner;
+
+static TEST_PROVIDER_PACKAGES: &[PackageSpec] = &[PackageSpec {
+    logical: "mise",
+    manager: PackageManager::Apt,
+    name: "mise",
+}];
+static TEST_CONSUMER_PACKAGES: &[PackageSpec] = &[PackageSpec {
+    logical: "consumer",
+    manager: PackageManager::Mise,
+    name: "consumer",
+}];
+static TEST_NO_MAPPINGS: &[MappingSpec] = &[];
+static TEST_PROVIDER: ModuleSpec = ModuleSpec {
+    id: "test-mise-provider",
+    description: "test mise provider",
+    platforms: &[Platform::Linux],
+    default_selected: false,
+    provides: Some(PackageManager::Mise),
+    requires: &[],
+    packages: TEST_PROVIDER_PACKAGES,
+    mappings: TEST_NO_MAPPINGS,
+    setup: SetupKind::None,
+    secret_bundle: None,
+};
+static TEST_CONSUMER: ModuleSpec = ModuleSpec {
+    id: "test-mise-consumer",
+    description: "test mise consumer",
+    platforms: &[Platform::Linux],
+    default_selected: false,
+    provides: None,
+    requires: &[],
+    packages: TEST_CONSUMER_PACKAGES,
+    mappings: TEST_NO_MAPPINGS,
+    setup: SetupKind::None,
+    secret_bundle: None,
+};
+static TEST_MODULES: &[ModuleSpec] = &[TEST_PROVIDER, TEST_CONSUMER];
 
 #[test]
 fn git_installs_before_mapping() {
@@ -51,6 +88,42 @@ fn provider_phase_precedes_dependent_package_phase() {
     )
     .unwrap();
     assert_eq!(runner.package_log(), ["mise", "git"]);
+}
+
+#[test]
+fn refresh_makes_provider_available_to_dependent_phase() {
+    let runner =
+        FakeRunner::available(["apt", "dpkg-query", "run0", "apt-get"]).refresh_adds("mise");
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    install_with_registry(
+        InstallRequest::explicit(["test-mise-consumer"], true, Platform::Linux),
+        test_context(&mut fixture, &runner),
+        TEST_MODULES,
+    )
+    .unwrap();
+
+    assert_eq!(runner.package_log(), ["mise"]);
+    assert!(runner
+        .calls()
+        .iter()
+        .any(|call| { call.program == "mise" && call.args == ["use", "--global", "consumer"] }));
+}
+
+#[test]
+fn refresh_failure_identifies_the_current_package_and_module() {
+    let runner = FakeRunner::apt_without_mise_then_mise_after_install().failing_refresh();
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    let error = install(
+        InstallRequest::explicit(["git"], true, Platform::Linux),
+        test_context(&mut fixture, &runner),
+    )
+    .unwrap_err();
+    let text = error.to_string();
+    assert!(
+        text.contains("git package git"),
+        "missing package context: {text}"
+    );
+    assert!(text.contains("refresh"), "missing refresh context: {text}");
 }
 
 #[test]

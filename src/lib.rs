@@ -1,6 +1,7 @@
 pub mod assets;
 pub mod error;
 pub mod model;
+pub mod registry;
 
 use std::ffi::OsString;
 use std::io::Write;

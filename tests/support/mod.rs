@@ -1,3 +1,6 @@
+pub mod mappings;
+
+#[allow(dead_code)]
 pub mod assertions {
     pub fn assert_nonempty(bytes: &[u8], label: &str) {
         assert!(!bytes.is_empty(), "expected nonempty bytes for {label}");

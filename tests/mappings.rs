@@ -1,0 +1,187 @@
+mod support;
+
+use dotfiles::assets::asset_bytes;
+use dotfiles::mappings::{apply_mapping, backup_root, resolve_target};
+use dotfiles::model::{Platform, Target};
+use dotfiles::platform::PlatformOps;
+use std::fs;
+use support::mappings::{
+    current_platform, git_mapping, mapping_target, profile_target, MappingFixture,
+};
+
+#[test]
+fn existing_target_is_backed_up_and_embedded_asset_is_a_regular_file() {
+    let fixture = MappingFixture::new();
+    fixture.write_target(".gitconfig", b"old");
+    apply_mapping(&fixture.ops, git_mapping(), b"new").unwrap();
+
+    assert_eq!(fixture.read_target(".gitconfig"), b"new");
+    assert!(!fixture.target(".gitconfig").is_symlink());
+    assert_eq!(fixture.read_backup(".gitconfig"), b"old");
+}
+
+#[test]
+fn first_install_materializes_the_embedded_asset() {
+    let fixture = MappingFixture::new();
+    let mapping = git_mapping();
+    apply_mapping(&fixture.ops, mapping, asset_bytes(mapping.asset)).unwrap();
+
+    assert_eq!(
+        fixture.read_target(".gitconfig"),
+        asset_bytes(mapping.asset)
+    );
+    assert!(!fixture.target(".gitconfig").is_symlink());
+}
+
+#[test]
+fn failed_write_restores_the_previous_target() {
+    let fixture = MappingFixture::with_failing_rename();
+    fixture.write_target(".gitconfig", b"old");
+    assert!(apply_mapping(&fixture.ops, git_mapping(), b"new").is_err());
+    assert_eq!(fixture.read_target(".gitconfig"), b"old");
+}
+
+#[test]
+fn existing_directory_is_backed_up_before_file_replacement() {
+    let fixture = MappingFixture::new();
+    let target = fixture.target(".gitconfig");
+    fs::create_dir_all(&target).unwrap();
+    fs::write(target.join("old"), b"old").unwrap();
+
+    apply_mapping(&fixture.ops, git_mapping(), b"new").unwrap();
+
+    assert_eq!(fixture.read_target(".gitconfig"), b"new");
+    assert_eq!(fixture.read_backup(".gitconfig/old"), b"old");
+}
+
+#[cfg(unix)]
+#[test]
+fn existing_symlink_is_backed_up_without_following_it() {
+    use std::os::unix::fs::symlink;
+
+    let fixture = MappingFixture::new();
+    let source = fixture.temp.path().join("source");
+    fs::write(&source, b"linked").unwrap();
+    let target = fixture.target(".gitconfig");
+    symlink(&source, &target).unwrap();
+
+    apply_mapping(&fixture.ops, git_mapping(), b"new").unwrap();
+
+    assert_eq!(fixture.read_target(".gitconfig"), b"new");
+    assert!(!target.is_symlink());
+    assert_eq!(fixture.read_backup(".gitconfig"), b"linked");
+}
+
+#[test]
+fn profile_targets_are_resolved_only_on_windows() {
+    let fixture = MappingFixture::with_platform(Platform::Windows);
+    let profile = fixture
+        .ops
+        .context()
+        .profile
+        .as_ref()
+        .expect("Windows profile");
+    assert_eq!(
+        resolve_target(&fixture.ops, Target::ProfileFile).unwrap(),
+        profile.clone()
+    );
+    assert_eq!(
+        profile_target(&fixture.ops, Target::ProfileSibling("Profile.d/test.ps1")),
+        profile.parent().unwrap().join("Profile.d/test.ps1")
+    );
+}
+
+#[test]
+fn linux_profile_target_is_rejected() {
+    let fixture = MappingFixture::with_platform(Platform::Linux);
+    let error = resolve_target(&fixture.ops, Target::ProfileFile).unwrap_err();
+    assert!(error.to_string().contains("PowerShell profile"));
+}
+
+#[test]
+fn parent_directory_targets_are_rejected() {
+    let fixture = MappingFixture::new();
+    let error = resolve_target(&fixture.ops, Target::Home("../outside")).unwrap_err();
+    assert!(error.to_string().contains("must stay below"));
+}
+
+#[test]
+fn backup_root_comes_from_the_platform_context() {
+    let fixture = MappingFixture::new();
+    assert_eq!(
+        backup_root(&fixture.ops).unwrap(),
+        fixture.ops.context().backup_root
+    );
+}
+
+#[test]
+fn current_registry_mapping_resolves_under_home() {
+    let fixture = MappingFixture::new();
+    let target = mapping_target(&fixture.ops, git_mapping());
+    assert_eq!(target, fixture.ops.context().home.join(".gitconfig"));
+    assert_eq!(current_platform(), fixture.ops.platform());
+}
+
+#[cfg(unix)]
+#[test]
+fn environment_home_and_state_overrides_are_used_by_unix_platform() {
+    use std::sync::{Mutex, OnceLock};
+
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("override-home");
+    let state = root.path().join("override-state");
+    let old_home = std::env::var_os("DOTFILES_HOME");
+    let old_state = std::env::var_os("XDG_STATE_HOME");
+    std::env::set_var("DOTFILES_HOME", &home);
+    std::env::set_var("XDG_STATE_HOME", &state);
+
+    let platform = dotfiles::platform::unix::from_environment().unwrap();
+    assert_eq!(platform.home_dir().unwrap(), home);
+    assert_eq!(
+        platform.backup_root().unwrap(),
+        state.join("dotfiles/backups")
+    );
+
+    restore_env("DOTFILES_HOME", old_home);
+    restore_env("XDG_STATE_HOME", old_state);
+}
+
+#[cfg(windows)]
+#[test]
+fn environment_profile_and_localappdata_overrides_are_used_by_windows_platform() {
+    use std::sync::{Mutex, OnceLock};
+
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("override-home");
+    let profile = root.path().join("profile.ps1");
+    let local = root.path().join("override-local");
+    let old_home = std::env::var_os("DOTFILES_HOME");
+    let old_profile = std::env::var_os("DOTFILES_PROFILE");
+    let old_local = std::env::var_os("LOCALAPPDATA");
+    std::env::set_var("DOTFILES_HOME", &home);
+    std::env::set_var("DOTFILES_PROFILE", &profile);
+    std::env::set_var("LOCALAPPDATA", &local);
+
+    let platform = dotfiles::platform::windows::from_environment().unwrap();
+    assert_eq!(platform.home_dir().unwrap(), home);
+    assert_eq!(platform.profile_path().unwrap(), profile);
+    assert_eq!(
+        platform.backup_root().unwrap(),
+        local.join("dotfiles/backups")
+    );
+
+    restore_env("DOTFILES_HOME", old_home);
+    restore_env("DOTFILES_PROFILE", old_profile);
+    restore_env("LOCALAPPDATA", old_local);
+}
+
+fn restore_env(name: &str, value: Option<std::ffi::OsString>) {
+    match value {
+        Some(value) => std::env::set_var(name, value),
+        None => std::env::remove_var(name),
+    }
+}

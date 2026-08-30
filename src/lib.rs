@@ -1,6 +1,8 @@
 pub mod assets;
 pub mod error;
+pub mod mappings;
 pub mod model;
+pub mod platform;
 pub mod registry;
 
 use std::ffi::OsString;

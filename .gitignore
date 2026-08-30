@@ -1,6 +1,7 @@
-# Local installer state
+# Local installer and Rust build state
 .dotfiles-cache/
 .worktrees/
+target/
 secrets/*.env
 
 # Editor and operating-system noise

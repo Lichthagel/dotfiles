@@ -55,6 +55,21 @@ pub trait PlatformOps {
     fn replace_file(&self, target: &Path, bytes: &[u8]) -> Result<BackupRecord> {
         replace_file_at(self.path_context(), target, bytes, false)
     }
+    fn replace_private_file(&self, target: &Path, bytes: &[u8]) -> Result<BackupRecord> {
+        let record = self.replace_file(target, bytes)?;
+        if let Err(error) = self.set_private_file_permissions(target) {
+            let _ = fs::remove_file(target);
+            if let Some(backup) = &record.backup {
+                if let Err(restore_error) = fs::rename(backup, target) {
+                    return Err(InstallError::Mapping(format!(
+                        "private permission setup failed: {error}; restoring backup failed: {restore_error}"
+                    )));
+                }
+            }
+            return Err(error);
+        }
+        Ok(record)
+    }
     fn set_private_file_permissions(&self, path: &Path) -> Result<()>;
 }
 
@@ -84,9 +99,10 @@ pub(crate) fn resolve_target_in_context(context: &PathContext, target: Target) -
 fn join_relative(root: &Path, relative: &str) -> Result<PathBuf> {
     let relative_path = Path::new(relative);
     if relative_path.is_absolute()
-        || relative_path
-            .components()
-            .any(|component| matches!(component, Component::ParentDir))
+        || relative_path.components().any(|component| {
+            matches!(component, Component::ParentDir)
+                || (cfg!(windows) && matches!(component, Component::Prefix(_) | Component::RootDir))
+        })
     {
         return Err(InstallError::Mapping(format!(
             "mapping target must stay below {}: {relative}",
@@ -169,14 +185,23 @@ pub fn replace_file_at(
         return Err(error);
     }
 
-    let existed = fs::symlink_metadata(target).is_ok();
+    let existed = match target_presence(fs::symlink_metadata(target)) {
+        Ok(existed) => existed,
+        Err(error) => {
+            let _ = fs::remove_file(&stage_path);
+            return Err(error);
+        }
+    };
     let backup = if existed {
         let backup = context
             .backup_root
             .join(timestamp())
             .join(relative_backup_path(context, target));
         if let Some(parent) = backup.parent() {
-            fs::create_dir_all(parent)?;
+            if let Err(error) = fs::create_dir_all(parent) {
+                let _ = fs::remove_file(&stage_path);
+                return Err(error.into());
+            }
         }
         if let Err(error) = fs::rename(target, &backup) {
             let _ = fs::remove_file(&stage_path);
@@ -307,10 +332,12 @@ pub(crate) fn platform_from_cfg() -> Platform {
 }
 
 pub(crate) fn current_home() -> Result<PathBuf> {
-    std::env::var_os("DOTFILES_HOME")
-        .or_else(|| std::env::var_os("HOME"))
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
+    let home = std::env::var_os("DOTFILES_HOME");
+    #[cfg(unix)]
+    let home = home.or_else(|| std::env::var_os("HOME"));
+    #[cfg(windows)]
+    let home = home.or_else(|| std::env::var_os("USERPROFILE"));
+    home.map(PathBuf::from)
         .ok_or_else(|| InstallError::Mapping("home directory is unavailable".into()))
 }
 
@@ -374,6 +401,30 @@ pub fn ensure_parent(path: &Path) -> Result<()> {
     Ok(())
 }
 
+fn target_presence(result: io::Result<fs::Metadata>) -> Result<bool> {
+    match result {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
 pub fn file_exists_or_symlink(path: &Path) -> bool {
-    fs::symlink_metadata(path).is_ok()
+    target_presence(fs::symlink_metadata(path)).unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::target_presence;
+    use std::io;
+
+    #[test]
+    fn metadata_errors_are_not_treated_as_absence() {
+        let error = target_presence(Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "metadata denied",
+        )))
+        .unwrap_err();
+        assert!(error.to_string().contains("metadata denied"));
+    }
 }

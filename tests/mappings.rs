@@ -5,9 +5,12 @@ use dotfiles::mappings::{apply_mapping, backup_root, resolve_target};
 use dotfiles::model::{Platform, Target};
 use dotfiles::platform::PlatformOps;
 use std::fs;
+use std::sync::{Mutex, OnceLock};
 use support::mappings::{
     current_platform, git_mapping, mapping_target, profile_target, MappingFixture,
 };
+
+static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[test]
 fn existing_target_is_backed_up_and_embedded_asset_is_a_regular_file() {
@@ -105,6 +108,86 @@ fn parent_directory_targets_are_rejected() {
     assert!(error.to_string().contains("must stay below"));
 }
 
+#[cfg(windows)]
+#[test]
+fn windows_root_relative_targets_are_rejected() {
+    let fixture = MappingFixture::with_platform(Platform::Windows);
+    let error = resolve_target(&fixture.ops, Target::Home(r"\outside")).unwrap_err();
+    assert!(error.to_string().contains("must stay below"));
+}
+
+#[test]
+fn backup_setup_failure_removes_staged_file() {
+    let fixture = MappingFixture::new();
+    fixture.write_target(".gitconfig", b"old");
+    fs::create_dir_all(fixture.ops.context().backup_root.parent().unwrap()).unwrap();
+    fs::write(&fixture.ops.context().backup_root, b"not-a-directory").unwrap();
+
+    assert!(apply_mapping(&fixture.ops, git_mapping(), b"new").is_err());
+    let staged = fs::read_dir(fixture.ops.context().home.clone())
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".dotfiles-")
+        })
+        .count();
+    assert_eq!(staged, 0);
+    assert_eq!(fixture.read_target(".gitconfig"), b"old");
+}
+
+#[cfg(unix)]
+#[test]
+fn private_file_replacement_sets_mode_0600() {
+    use dotfiles::platform::unix::UnixPlatform;
+    use std::os::unix::fs::PermissionsExt;
+    use tempfile::tempdir;
+
+    let temp = tempdir().unwrap();
+    let home = temp.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let platform = UnixPlatform::new(dotfiles::platform::PathContext::new(
+        home.clone(),
+        None,
+        temp.path().join("state"),
+    ));
+    let target = home.join("credential");
+    platform.replace_private_file(&target, b"secret").unwrap();
+    assert_eq!(
+        fs::metadata(target).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn private_file_replacement_grants_only_current_user_full_control() {
+    use dotfiles::platform::windows::WindowsPlatform;
+    use std::process::Command;
+    use tempfile::tempdir;
+
+    let temp = tempdir().unwrap();
+    let home = temp.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let platform = WindowsPlatform::new(dotfiles::platform::PathContext::new(
+        home.clone(),
+        Some(home.join("profile.ps1")),
+        temp.path().join("state"),
+    ));
+    let target = home.join("credential");
+    platform.replace_private_file(&target, b"secret").unwrap();
+    let whoami = String::from_utf8(Command::new("whoami").output().unwrap().stdout).unwrap();
+    let account = whoami.trim().rsplit('\\').next().unwrap();
+    let acl =
+        String::from_utf8(Command::new("icacls").arg(&target).output().unwrap().stdout).unwrap();
+    let entries: Vec<_> = acl.lines().filter(|line| line.contains(":(")).collect();
+    assert_eq!(entries.len(), 1, "unexpected ACL entries: {acl}");
+    assert!(entries[0].contains(account));
+    assert!(entries[0].contains("(F)"));
+}
+
 #[test]
 fn backup_root_comes_from_the_platform_context() {
     let fixture = MappingFixture::new();
@@ -125,9 +208,6 @@ fn current_registry_mapping_resolves_under_home() {
 #[cfg(unix)]
 #[test]
 fn environment_home_and_state_overrides_are_used_by_unix_platform() {
-    use std::sync::{Mutex, OnceLock};
-
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let root = tempfile::tempdir().unwrap();
     let home = root.path().join("override-home");
@@ -151,9 +231,6 @@ fn environment_home_and_state_overrides_are_used_by_unix_platform() {
 #[cfg(windows)]
 #[test]
 fn environment_profile_and_localappdata_overrides_are_used_by_windows_platform() {
-    use std::sync::{Mutex, OnceLock};
-
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let root = tempfile::tempdir().unwrap();
     let home = root.path().join("override-home");

@@ -109,6 +109,7 @@ fn identity_file_and_default_identity_path_are_supported() {
 
 #[test]
 fn interactive_identity_prompt_accepts_a_path_or_direct_key() {
+    let _lock = environment_lock();
     let fixture = EncryptedFixture::new("KEY=value\n");
     let temp = tempfile::tempdir().unwrap();
     let identity_path = temp.path().join("prompted-keys.txt");

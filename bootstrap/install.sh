@@ -24,15 +24,25 @@ checksum="$temporary_dir/dotfiles-linux-x86_64.sha256"
 curl -fsSL "$release_url/dotfiles-linux-x86_64" -o "$binary"
 curl -fsSL "$release_url/dotfiles-linux-x86_64.sha256" -o "$checksum"
 
-expected="$(awk 'NF { print $1; exit }' "$checksum" | tr '[:upper:]' '[:lower:]')"
+expected=''
+while IFS=' ' read -r candidate _; do
+    if [ -n "$candidate" ]; then
+        expected="$(printf '%s' "$candidate" | tr '[:upper:]' '[:lower:]')"
+        break
+    fi
+done < "$checksum"
 if [ -z "$expected" ]; then
     printf 'Release checksum is empty.\n' >&2
     exit 1
 fi
 if command -v sha256sum >/dev/null 2>&1; then
-    actual="$(sha256sum "$binary" | awk '{ print $1 }' | tr '[:upper:]' '[:lower:]')"
+    actual="$(sha256sum "$binary")"
+    actual="${actual%% *}"
+    actual="$(printf '%s' "$actual" | tr '[:upper:]' '[:lower:]')"
 elif command -v shasum >/dev/null 2>&1; then
-    actual="$(shasum -a 256 "$binary" | awk '{ print $1 }' | tr '[:upper:]' '[:lower:]')"
+    actual="$(shasum -a 256 "$binary")"
+    actual="${actual%% *}"
+    actual="$(printf '%s' "$actual" | tr '[:upper:]' '[:lower:]')"
 else
     printf 'Neither sha256sum nor shasum is available.\n' >&2
     exit 1

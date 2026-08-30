@@ -56,8 +56,13 @@ fn legacy_installer_surface_is_removed_and_embedded_secret_sources_remain() {
 fn no_plaintext_secret_environment_file_is_tracked() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let output = Command::new("git")
-        .args(["ls-files", "secrets/*.env"])
-        .current_dir(root)
+        .args([
+            "-C",
+            root.to_str()
+                .expect("manifest directory must be valid UTF-8"),
+            "ls-files",
+            "secrets/*.env",
+        ])
         .output()
         .expect("git must be available for repository secret checks");
     assert!(output.status.success(), "git ls-files failed: {output:?}");

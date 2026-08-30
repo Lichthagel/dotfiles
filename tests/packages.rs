@@ -1,9 +1,7 @@
 mod support;
 
 use dotfiles::model::{PackageManager, Platform};
-use dotfiles::packages::{
-    build_package_plan, install_package, CommandRunner, PackageAction, SystemCommandRunner,
-};
+use dotfiles::packages::{build_package_plan, install_package, CommandRunner, PackageAction};
 use dotfiles::registry::find_module;
 use support::runner::FakeRunner;
 
@@ -184,7 +182,7 @@ fn system_runner_invokes_cmd_scripts_for_scoop() {
     let script = fixture.path().join("scoop.cmd");
     std::fs::write(
         &script,
-        format!("@echo off\r\necho %*>{}\r\n", log.to_string_lossy()),
+        format!("@echo off\r\necho %*>\"{}\"\r\n", log.display()),
     )
     .unwrap();
     let old_path = std::env::var_os("PATH");
@@ -195,7 +193,7 @@ fn system_runner_invokes_cmd_scripts_for_scoop() {
     std::env::set_var("PATH", std::env::join_paths(paths).unwrap());
 
     let result = install_package(
-        &SystemCommandRunner,
+        &dotfiles::packages::SystemCommandRunner,
         Platform::Windows,
         &action(PackageManager::Scoop, "pkg"),
     );

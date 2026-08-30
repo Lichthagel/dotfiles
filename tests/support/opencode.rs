@@ -373,16 +373,40 @@ pub fn config_path_is_private(path: &Path) -> bool {
     }
     #[cfg(windows)]
     {
-        let user = String::from_utf8_lossy(&Command::new("whoami").output().unwrap().stdout)
+        let whoami = Command::new("whoami").output().unwrap();
+        if !whoami.status.success() {
+            return false;
+        }
+        let user = String::from_utf8_lossy(&whoami.stdout)
             .trim()
             .to_ascii_lowercase();
-        let acl =
-            String::from_utf8_lossy(&Command::new("icacls").arg(path).output().unwrap().stdout)
-                .to_ascii_lowercase();
-        return acl.contains(&user)
-            && acl.contains("(f)")
-            && !acl.contains("everyone")
-            && !acl.contains("builtin\\users")
-            && !acl.contains("authenticated users");
+        let output = Command::new("icacls").arg(path).output().unwrap();
+        if !output.status.success() {
+            return false;
+        }
+        let path_prefix = path.to_string_lossy().to_ascii_lowercase();
+        let mut principals = Vec::new();
+        let mut current_user_has_full_control = false;
+        for raw_line in String::from_utf8_lossy(&output.stdout).lines() {
+            let line = raw_line.trim();
+            let Some(access_start) = line.find(":(") else {
+                continue;
+            };
+            let mut principal = line[..access_start].trim().to_ascii_lowercase();
+            if let Some(first_line_principal) = principal.strip_prefix(&path_prefix) {
+                principal = first_line_principal.trim().to_string();
+            }
+            if principal.is_empty() {
+                return false;
+            }
+            let permissions = &line[access_start + 2..];
+            if principal == user && permissions.contains('F') {
+                current_user_has_full_control = true;
+            }
+            principals.push(principal);
+        }
+        principals.sort();
+        principals.dedup();
+        return current_user_has_full_control && principals == vec![user];
     }
 }

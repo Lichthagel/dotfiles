@@ -1,7 +1,7 @@
 mod support;
 
 use dotfiles::model::{PackageManager, Platform};
-use dotfiles::packages::{build_package_plan, install_package, PackageAction};
+use dotfiles::packages::{build_package_plan, install_package, CommandRunner, PackageAction};
 use dotfiles::registry::find_module;
 use support::runner::FakeRunner;
 
@@ -47,6 +47,29 @@ fn installed_logical_packages_are_not_planned() {
     let runner = FakeRunner::available_and_installed(["winget"], [("winget", "Git.Git")]);
     let plan = build_package_plan(&runner, Platform::Windows, &[module("git")], true).unwrap();
     assert!(plan.actions().is_empty());
+}
+
+#[test]
+fn no_available_candidate_lists_supported_managers() {
+    let runner = FakeRunner::available(std::iter::empty::<&str>());
+    let error = build_package_plan(&runner, Platform::Linux, &[module("git")], true)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("supported managers: apt, dnf, pacman, brew, mise"));
+}
+
+#[test]
+fn near_matches_do_not_suppress_mise_or_scoop_packages() {
+    for (platform, manager) in [
+        (Platform::Linux, PackageManager::Mise),
+        (Platform::Windows, PackageManager::Scoop),
+    ] {
+        let runner =
+            FakeRunner::available_and_installed([manager.label()], [(manager.label(), "git-lfs")]);
+        let plan = build_package_plan(&runner, platform, &[module("git")], true).unwrap();
+        assert_eq!(plan.actions()[0].manager, manager);
+        assert_eq!(plan.actions()[0].package_name, "git");
+    }
 }
 
 #[test]
@@ -145,6 +168,31 @@ fn unsupported_manager_returns_an_error() {
     )
     .unwrap_err();
     assert!(error.to_string().contains("not supported"));
+}
+
+#[cfg(unix)]
+#[test]
+fn system_runner_rejects_non_executable_direct_paths_on_unix() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = tempfile::tempdir().unwrap();
+    let path = fixture.path().join("manager");
+    std::fs::write(&path, b"#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(!dotfiles::packages::SystemCommandRunner.available(path.to_str().unwrap()));
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(dotfiles::packages::SystemCommandRunner.available(path.to_str().unwrap()));
+}
+
+#[cfg(windows)]
+#[test]
+fn system_runner_rejects_non_executable_direct_paths_on_windows() {
+    let fixture = tempfile::tempdir().unwrap();
+    let text_path = fixture.path().join("manager.txt");
+    let cmd_path = fixture.path().join("manager.cmd");
+    std::fs::write(&text_path, b"not executable").unwrap();
+    std::fs::write(&cmd_path, b"@echo off\n").unwrap();
+    assert!(!dotfiles::packages::SystemCommandRunner.available(text_path.to_str().unwrap()));
+    assert!(dotfiles::packages::SystemCommandRunner.available(cmd_path.to_str().unwrap()));
 }
 
 #[test]

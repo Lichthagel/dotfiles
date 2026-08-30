@@ -69,36 +69,79 @@ impl CommandRunner for SystemCommandRunner {
     }
 }
 
+fn is_executable_file(path: &Path) -> bool {
+    let Ok(metadata) = path.metadata() else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        return metadata.permissions().mode() & 0o111 != 0;
+    }
+    #[cfg(windows)]
+    {
+        let extension = path
+            .extension()
+            .map(|value| format!(".{}", value.to_string_lossy()).to_ascii_uppercase());
+        let extensions = env::var("PATHEXT")
+            .ok()
+            .map(|value| {
+                value
+                    .split(';')
+                    .map(str::to_ascii_uppercase)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| vec![".COM".into(), ".EXE".into(), ".BAT".into(), ".CMD".into()]);
+        extension.is_some_and(|value| extensions.iter().any(|item| item == &value))
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        true
+    }
+}
+
 fn find_in_path(program: &str) -> bool {
     let path = Path::new(program);
     if path.components().count() > 1 {
-        return path.is_file();
+        return is_executable_file(path);
     }
     let Some(path_value) = env::var_os("PATH") else {
         return false;
     };
     for directory in env::split_paths(&path_value) {
-        if directory.join(program).is_file() {
+        if is_executable_file(&directory.join(program)) {
             return true;
         }
         #[cfg(windows)]
         {
-            let extensions = env::var_os("PATHEXT")
+            let extensions = env::var("PATHEXT")
+                .ok()
                 .map(|value| {
-                    env::split_paths(&value)
-                        .map(|path| path.to_string_lossy().into_owned())
+                    value
+                        .split(';')
+                        .map(str::to_ascii_uppercase)
                         .collect::<Vec<_>>()
                 })
-                .unwrap_or_else(|| vec![".EXE".into(), ".CMD".into(), ".BAT".into()]);
-            if extensions
-                .iter()
-                .any(|extension| directory.join(format!("{program}{extension}")).is_file())
-            {
+                .unwrap_or_else(|| {
+                    vec![".COM".into(), ".EXE".into(), ".BAT".into(), ".CMD".into()]
+                });
+            if extensions.iter().any(|extension| {
+                is_executable_file(&directory.join(format!("{program}{extension}")))
+            }) {
                 return true;
             }
         }
     }
     false
+}
+
+fn listed_exact_name(stdout: &[u8], package_name: &str) -> bool {
+    String::from_utf8_lossy(stdout)
+        .lines()
+        .any(|line| line.split_whitespace().next() == Some(package_name))
 }
 
 pub trait ManagerAdapter {
@@ -179,10 +222,9 @@ impl ManagerAdapter for PackageManagerAdapter {
                 PackageManager::Brew | PackageManager::Winget => {
                     stdout.lines().any(|line| line.contains(package_name))
                 }
-                PackageManager::Mise | PackageManager::Scoop => stdout.lines().any(|line| {
-                    line.split_whitespace().next() == Some(package_name)
-                        || line.contains(package_name)
-                }),
+                PackageManager::Mise | PackageManager::Scoop => {
+                    listed_exact_name(&output.stdout, package_name)
+                }
             });
         }
         Ok(false)
@@ -355,8 +397,13 @@ pub fn build_package_plan(
             })
             .collect::<Vec<_>>();
         if available.is_empty() {
+            let supported = PackageManager::priority(platform)
+                .iter()
+                .map(|manager| manager.label())
+                .collect::<Vec<_>>()
+                .join(", ");
             return Err(InstallError::Package(format!(
-                "no supported package manager is available for {logical}"
+                "no supported package manager is available for {logical}; supported managers: {supported}"
             )));
         }
         let installed = available.iter().try_fold(false, |installed, candidate| {

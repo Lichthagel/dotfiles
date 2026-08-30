@@ -13,9 +13,10 @@ pub struct Invocation {
 
 #[derive(Clone, Debug)]
 pub struct FakeRunner {
-    available: BTreeSet<String>,
+    available: Arc<Mutex<BTreeSet<String>>>,
     installed: HashSet<(String, String)>,
     fail_programs: BTreeSet<String>,
+    atuin_status: Option<bool>,
     calls: Arc<Mutex<Vec<Invocation>>>,
 }
 
@@ -26,9 +27,10 @@ impl FakeRunner {
         S: Into<String>,
     {
         Self {
-            available: programs.into_iter().map(Into::into).collect(),
+            available: Arc::new(Mutex::new(programs.into_iter().map(Into::into).collect())),
             installed: HashSet::new(),
             fail_programs: BTreeSet::new(),
+            atuin_status: None,
             calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -41,12 +43,13 @@ impl FakeRunner {
         M: Into<String>,
     {
         Self {
-            available: programs.into_iter().map(Into::into).collect(),
+            available: Arc::new(Mutex::new(programs.into_iter().map(Into::into).collect())),
             installed: installed
                 .into_iter()
                 .map(|(manager, package)| (manager.into(), package.into()))
                 .collect(),
             fail_programs: BTreeSet::new(),
+            atuin_status: None,
             calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -54,6 +57,22 @@ impl FakeRunner {
     pub fn failing_program(mut self, program: &str) -> Self {
         self.fail_programs.insert(program.to_owned());
         self
+    }
+
+    pub fn atuin_not_logged_in() -> Self {
+        let mut runner = Self::available(["atuin"]);
+        runner.atuin_status = Some(false);
+        runner
+    }
+
+    pub fn atuin_logged_in() -> Self {
+        let mut runner = Self::available(["atuin"]);
+        runner.atuin_status = Some(true);
+        runner
+    }
+
+    pub fn add_available(&self, program: &str) {
+        self.available.lock().unwrap().insert(program.to_owned());
     }
 
     pub fn calls(&self) -> Vec<Invocation> {
@@ -84,10 +103,6 @@ impl FakeRunner {
                     .env
                     .iter()
                     .any(|(name, env_value)| name.contains(value) || env_value.contains(value))
-                || call
-                    .stdin
-                    .as_ref()
-                    .is_some_and(|stdin| String::from_utf8_lossy(stdin).contains(value))
         })
     }
 
@@ -154,7 +169,7 @@ impl FakeRunner {
 
 impl CommandRunner for FakeRunner {
     fn available(&self, program: &str) -> bool {
-        self.available.contains(program)
+        self.available.lock().unwrap().contains(program)
     }
 
     fn run(
@@ -176,6 +191,17 @@ impl CommandRunner for FakeRunner {
             || (program == "scoop" && args.first().is_some_and(|arg| arg == "list"))
             || (program == "brew" && args.first().is_some_and(|arg| arg == "list"))
             || (program == "mise" && args.first().is_some_and(|arg| arg == "list"));
+        if program == "atuin" && args.first().map(String::as_str) == Some("status") {
+            return Ok(CommandOutput {
+                status: if self.atuin_status.unwrap_or(false) {
+                    0
+                } else {
+                    1
+                },
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            });
+        }
         if is_query {
             return Ok(self.output_for_query(program, args));
         }

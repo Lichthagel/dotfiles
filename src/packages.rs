@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::env;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::error::{InstallError, Result};
@@ -172,7 +172,49 @@ impl PackageManagerAdapter {
         })
     }
 
+    fn scoop_script() -> Option<PathBuf> {
+        let root = env::var_os("DOTFILES_SCOOP_ROOT")
+            .or_else(|| env::var_os("SCOOP"))
+            .or_else(|| {
+                env::var_os("USERPROFILE")
+                    .map(|home| PathBuf::from(home).join("scoop").into_os_string())
+            });
+        root.map(PathBuf::from).map(|root| {
+            root.join("apps")
+                .join("scoop")
+                .join("current")
+                .join("bin")
+                .join("scoop.ps1")
+        })
+    }
+
+    fn scoop_command(
+        self,
+        runner: &dyn CommandRunner,
+        args: &[String],
+    ) -> Result<(String, Vec<String>)> {
+        if runner.available("scoop") {
+            return Ok(("scoop".into(), args.to_vec()));
+        }
+        if runner.available("pwsh") {
+            if let Some(script) = Self::scoop_script().filter(|path| path.is_file()) {
+                let mut command = vec![
+                    "-NoProfile".into(),
+                    "-File".into(),
+                    script.to_string_lossy().into_owned(),
+                ];
+                command.extend(args.iter().cloned());
+                return Ok(("pwsh".into(), command));
+            }
+        }
+        Err(InstallError::Package("Scoop is not available".into()))
+    }
+
     fn query(self, runner: &dyn CommandRunner, args: &[String]) -> Result<CommandOutput> {
+        if self.manager == PackageManager::Scoop {
+            let (program, command_args) = self.scoop_command(runner, args)?;
+            return runner.run(&program, &command_args, &[], None);
+        }
         let program = match self.manager {
             PackageManager::Apt => "dpkg-query",
             PackageManager::Dnf => "rpm",
@@ -192,6 +234,11 @@ impl ManagerAdapter for PackageManagerAdapter {
     }
 
     fn available(&self, runner: &dyn CommandRunner) -> bool {
+        if self.manager == PackageManager::Scoop {
+            return runner.available("scoop")
+                || (runner.available("pwsh")
+                    && Self::scoop_script().is_some_and(|path| path.is_file()));
+        }
         self.program()
             .map(|program| runner.available(program))
             .unwrap_or(false)
@@ -232,7 +279,7 @@ impl ManagerAdapter for PackageManagerAdapter {
 
     fn install(&self, runner: &dyn CommandRunner, package_name: &str) -> Result<()> {
         self.program()?;
-        let (program, args) = match self.manager {
+        let (program, args): (String, Vec<String>) = match self.manager {
             PackageManager::Apt => {
                 let privilege = if runner.available("run0") {
                     "run0"
@@ -244,7 +291,7 @@ impl ManagerAdapter for PackageManagerAdapter {
                     ));
                 };
                 (
-                    privilege,
+                    privilege.to_owned(),
                     vec![
                         "apt-get".into(),
                         "install".into(),
@@ -264,7 +311,7 @@ impl ManagerAdapter for PackageManagerAdapter {
                     ));
                 };
                 (
-                    privilege,
+                    privilege.to_owned(),
                     vec![
                         "dnf".into(),
                         "install".into(),
@@ -284,7 +331,7 @@ impl ManagerAdapter for PackageManagerAdapter {
                     ));
                 };
                 (
-                    privilege,
+                    privilege.to_owned(),
                     vec![
                         "pacman".into(),
                         "-S".into(),
@@ -294,13 +341,13 @@ impl ManagerAdapter for PackageManagerAdapter {
                     ],
                 )
             }
-            PackageManager::Brew => ("brew", vec!["install".into(), package_name.into()]),
+            PackageManager::Brew => ("brew".into(), vec!["install".into(), package_name.into()]),
             PackageManager::Mise => (
-                "mise",
+                "mise".into(),
                 vec!["use".into(), "--global".into(), package_name.into()],
             ),
             PackageManager::Winget => (
-                "winget",
+                "winget".into(),
                 vec![
                     "install".into(),
                     "--id".into(),
@@ -310,9 +357,11 @@ impl ManagerAdapter for PackageManagerAdapter {
                     "--accept-package-agreements".into(),
                 ],
             ),
-            PackageManager::Scoop => ("scoop", vec!["install".into(), package_name.into()]),
+            PackageManager::Scoop => {
+                self.scoop_command(runner, &["install".into(), package_name.into()])?
+            }
         };
-        let output = runner.run(program, &args, &[], None)?;
+        let output = runner.run(&program, &args, &[], None)?;
         if output.status != 0 {
             let detail = String::from_utf8_lossy(&output.stderr);
             return Err(InstallError::Package(format!(

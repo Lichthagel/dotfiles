@@ -8,8 +8,57 @@ permissions:
   contents: read
 
 jobs:
-  bash:
-    name: Bash tests and ShellCheck
+  rust-linux:
+    name: Rust tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Clippy
+        run: cargo clippy --locked -- -D warnings
+
+      - name: Test Linux bootstrap
+        run: bash tests/bootstrap.sh
+
+  rust-windows:
+    name: Rust tests (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Clippy
+        run: cargo clippy --locked -- -D warnings
+
+      - name: Test Windows bootstrap
+        shell: pwsh
+        run: pwsh -NoProfile -File .\tests\bootstrap.ps1
+
+  legacy-bash:
+    name: Legacy Bash tests (until cleanup)
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -34,8 +83,8 @@ jobs:
           find . -type f -name '*.sh' -print0 \
             | xargs -0 shellcheck --severity=error
 
-  powershell:
-    name: PowerShell tests and PSScriptAnalyzer
+  legacy-powershell:
+    name: Legacy PowerShell tests (until cleanup)
     runs-on: windows-latest
     steps:
       - name: Check out repository

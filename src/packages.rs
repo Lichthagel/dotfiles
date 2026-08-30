@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 
 use crate::error::{InstallError, Result};
 use crate::model::{PackageManager, Platform};
-use crate::platform::package_manager_program;
+use crate::platform::{current_home, current_scoop_root, package_manager_program};
 use crate::registry::ModuleSpec;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -173,14 +173,9 @@ impl PackageManagerAdapter {
     }
 
     fn scoop_script() -> Option<PathBuf> {
-        let root = env::var_os("DOTFILES_SCOOP_ROOT")
-            .or_else(|| env::var_os("SCOOP"))
-            .or_else(|| {
-                env::var_os("USERPROFILE")
-                    .map(|home| PathBuf::from(home).join("scoop").into_os_string())
-            });
-        root.map(PathBuf::from).map(|root| {
-            root.join("apps")
+        current_home().ok().map(|home| {
+            current_scoop_root(&home)
+                .join("apps")
                 .join("scoop")
                 .join("current")
                 .join("bin")

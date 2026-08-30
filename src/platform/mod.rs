@@ -355,6 +355,18 @@ pub(crate) fn current_home() -> Result<PathBuf> {
         .ok_or_else(|| InstallError::Mapping("home directory is unavailable".into()))
 }
 
+pub(crate) fn current_scoop_root(home: &Path) -> PathBuf {
+    if let Some(root) =
+        std::env::var_os("DOTFILES_SCOOP_ROOT").or_else(|| std::env::var_os("SCOOP"))
+    {
+        return PathBuf::from(root);
+    }
+    std::env::var_os("DOTFILES_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.to_path_buf())
+        .join("scoop")
+}
+
 pub(crate) fn current_backup_root(home: &Path) -> PathBuf {
     #[cfg(unix)]
     {

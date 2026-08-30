@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use dotfiles::error::Result;
-use dotfiles::model::Platform;
-use dotfiles::packages::{CommandOutput, CommandRunner};
+use dotfiles::model::{PackageManager, Platform};
+use dotfiles::packages::{CommandOutput, CommandRunner, ManagerAdapter, PackageManagerAdapter};
 use dotfiles::setup::providers::{install_homebrew, install_scoop};
 use dotfiles::setup::{HttpClient, SetupContext};
 use support::mappings::MappingFixture;
@@ -47,6 +47,10 @@ impl CloneRunner {
 impl CommandRunner for CloneRunner {
     fn available(&self, program: &str) -> bool {
         self.available.iter().any(|value| value == program)
+            || std::env::var_os("PATH")
+                .into_iter()
+                .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+                .any(|directory| directory.join(program).is_file())
     }
 
     fn run(
@@ -116,13 +120,15 @@ fn homebrew_bootstrap_clones_repository_and_updates_path() {
     install_homebrew(&context(&fixture, &runner, &http)).unwrap();
 
     let calls = runner.calls();
-    assert_eq!(calls.len(), 1);
+    assert_eq!(calls.len(), 2);
     assert_eq!(calls[0].0, "git");
     assert_eq!(
         calls[0].1[..4],
         ["clone", "--depth", "1", "https://github.com/Homebrew/brew"]
     );
     assert_eq!(PathBuf::from(&calls[0].1[4]), prefix);
+    assert_eq!(calls[1].0, "brew");
+    assert_eq!(calls[1].1, vec!["--version"]);
     let path = std::env::var_os("PATH").unwrap();
     let paths = std::env::split_paths(&path).collect::<Vec<_>>();
     assert_eq!(paths[0], prefix.join("bin"));
@@ -143,6 +149,43 @@ fn existing_scoop_needs_no_bootstrap() {
 }
 
 #[test]
+fn scoop_bootstrap_and_package_adapter_share_dotfiles_home_root() {
+    let _guard = ENV_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let fixture_root = tempfile::tempdir().unwrap();
+    let home = fixture_root.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let old_home = std::env::var_os("DOTFILES_HOME");
+    let old_scoop_root = std::env::var_os("DOTFILES_SCOOP_ROOT");
+    let old_scoop = std::env::var_os("SCOOP");
+    let old_path = std::env::var_os("PATH");
+    std::env::set_var("DOTFILES_HOME", &home);
+    std::env::remove_var("DOTFILES_SCOOP_ROOT");
+    std::env::remove_var("SCOOP");
+    std::env::set_var("PATH", r"C:\\Windows\\System32");
+
+    let runner = CloneRunner::new(&["git", "pwsh"]);
+    let fixture = MappingFixture::with_platform(Platform::Windows);
+    let http = NoHttp;
+    install_scoop(&context(&fixture, &runner, &http)).unwrap();
+
+    let expected_root = home.join("scoop");
+    assert!(expected_root
+        .join("apps/scoop/current/bin/scoop.ps1")
+        .is_file());
+    assert!(
+        PackageManagerAdapter::new(Platform::Windows, PackageManager::Scoop).available(&runner)
+    );
+
+    restore_env("DOTFILES_HOME", old_home);
+    restore_env("DOTFILES_SCOOP_ROOT", old_scoop_root);
+    restore_env("SCOOP", old_scoop);
+    restore_env("PATH", old_path);
+}
+
+#[test]
 fn scoop_bootstrap_clones_repository_creates_layout_and_updates_path() {
     let _guard = ENV_LOCK
         .get_or_init(|| Mutex::new(()))
@@ -154,13 +197,13 @@ fn scoop_bootstrap_clones_repository_creates_layout_and_updates_path() {
     std::env::set_var("DOTFILES_SCOOP_ROOT", root.path());
     std::env::set_var("PATH", r"C:\Windows\System32");
 
-    let runner = CloneRunner::new(&["git"]);
+    let runner = CloneRunner::new(&["git", "pwsh"]);
     let fixture = MappingFixture::with_platform(Platform::Windows);
     let http = NoHttp;
     install_scoop(&context(&fixture, &runner, &http)).unwrap();
 
     let calls = runner.calls();
-    assert_eq!(calls.len(), 1);
+    assert_eq!(calls.len(), 2);
     assert_eq!(calls[0].0, "git");
     assert_eq!(
         calls[0].1[..4],
@@ -172,6 +215,8 @@ fn scoop_bootstrap_clones_repository_creates_layout_and_updates_path() {
         ]
     );
     let current = root.path().join("apps/scoop/current");
+    assert_eq!(calls[1].0, "pwsh");
+    assert_eq!(calls[1].1[0], "-NoProfile");
     assert_eq!(PathBuf::from(&calls[0].1[4]), current);
     for directory in ["shims", "apps", "buckets", "cache", "persist"] {
         assert!(root.path().join(directory).is_dir(), "missing {directory}");
@@ -179,6 +224,9 @@ fn scoop_bootstrap_clones_repository_creates_layout_and_updates_path() {
     assert!(current.join("bin/scoop.ps1").is_file());
     let paths = std::env::split_paths(&std::env::var_os("PATH").unwrap()).collect::<Vec<_>>();
     assert_eq!(paths[0], root.path().join("shims"));
+    assert!(
+        PackageManagerAdapter::new(Platform::Windows, PackageManager::Scoop).available(&runner)
+    );
 
     restore_env("DOTFILES_SCOOP_ROOT", old_root);
     restore_env("PATH", old_path);

@@ -3,12 +3,15 @@ mod support;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
+use dotfiles::cli::{TerminalIo, TerminalKey};
 use dotfiles::error::Result;
 use dotfiles::model::SecretBundle;
 use dotfiles::secrets::{
     decrypt_bundle, required_values, IdentityPrompt, IdentitySource, SecretMode,
+    TerminalIdentityPrompt,
 };
 use support::secrets::EncryptedFixture;
+use zeroize::Zeroizing;
 
 fn environment_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -118,7 +121,7 @@ fn interactive_identity_prompt_accepts_a_path_or_direct_key() {
     let scope = decrypt_bundle(
         SecretBundle::Atuin,
         fixture.payload(),
-        &IdentitySource::Direct(fixture.identity_text().to_owned()),
+        &IdentitySource::Direct(Zeroizing::new(fixture.identity_text().to_owned())),
         SecretMode::Required,
     )
     .unwrap()
@@ -187,6 +190,38 @@ fn empty_required_values_are_rejected_but_comments_and_empty_lines_parse() {
 }
 
 #[test]
+fn malformed_secret_errors_do_not_include_values() {
+    let fixture = EncryptedFixture::new("LEAK=do-not-print\nnot-an-assignment\n");
+    let error = decrypt_bundle(
+        SecretBundle::Atuin,
+        fixture.payload(),
+        &fixture.identity(),
+        SecretMode::Required,
+    )
+    .unwrap_err();
+    assert!(!error.to_string().contains("do-not-print"));
+}
+
+#[test]
+fn terminal_identity_prompt_uses_terminal_line_input() {
+    let fixture = EncryptedFixture::new("KEY=value\n");
+    let mut terminal = LineTerminal::new([fixture.identity_text().to_owned()]);
+    let mut prompt = TerminalIdentityPrompt::new(&mut terminal);
+    let resolved = dotfiles::secrets::resolve_identity(
+        IdentitySource::File(PathBuf::from("missing-identity-file")),
+        SecretMode::Required,
+        Some(&mut prompt),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(resolved.as_identity_count(), 1);
+    assert!(terminal
+        .prompts
+        .iter()
+        .any(|prompt| prompt.contains("Age identity")));
+}
+
+#[test]
 fn debug_output_redacts_secret_values() {
     let fixture = EncryptedFixture::new("KEY=do-not-print\n");
     let scope = decrypt_bundle(
@@ -213,8 +248,48 @@ impl Prompt {
 }
 
 impl IdentityPrompt for Prompt {
-    fn prompt_identity(&mut self) -> Result<Option<String>> {
-        Ok(self.value.take())
+    fn prompt_identity(&mut self) -> Result<Option<Zeroizing<String>>> {
+        Ok(self.value.take().map(Zeroizing::new))
+    }
+}
+
+struct LineTerminal {
+    lines: Vec<String>,
+    prompts: Vec<String>,
+}
+
+impl LineTerminal {
+    fn new(lines: impl IntoIterator<Item = String>) -> Self {
+        Self {
+            lines: lines.into_iter().collect(),
+            prompts: Vec::new(),
+        }
+    }
+}
+
+impl TerminalIo for LineTerminal {
+    fn is_interactive(&self) -> bool {
+        true
+    }
+
+    fn read_key(&mut self) -> Result<TerminalKey> {
+        Err(dotfiles::error::InstallError::Usage(
+            "line-only terminal".into(),
+        ))
+    }
+
+    fn read_line(&mut self, prompt: &str) -> Result<Option<String>> {
+        self.prompts.push(prompt.to_owned());
+        Ok(self.lines.pop())
+    }
+
+    fn clear(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn write_line(&mut self, line: &str) -> Result<()> {
+        self.prompts.push(line.to_owned());
+        Ok(())
     }
 }
 

@@ -45,6 +45,18 @@ pub trait TerminalIo {
         Ok(RawModeGuard::inactive())
     }
     fn read_key(&mut self) -> Result<TerminalKey>;
+    fn read_line(&mut self, prompt: &str) -> Result<Option<String>> {
+        self.write_line(prompt)?;
+        let mut value = String::new();
+        let read = io::stdin()
+            .read_line(&mut value)
+            .map_err(InstallError::Io)?;
+        if read == 0 {
+            Ok(None)
+        } else {
+            Ok(Some(value.trim_end_matches(['\r', '\n']).to_owned()))
+        }
+    }
     fn clear(&mut self) -> Result<()>;
     fn write_line(&mut self, line: &str) -> Result<()>;
 }

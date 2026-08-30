@@ -7,13 +7,14 @@ use age::x25519;
 use zeroize::Zeroizing;
 
 use crate::assets::encrypted_bundle_bytes;
+use crate::cli::TerminalIo;
 use crate::error::{InstallError, Result};
 use crate::model::SecretBundle;
 use crate::platform;
 
 #[derive(Clone)]
 pub enum IdentitySource {
-    Direct(String),
+    Direct(Zeroizing<String>),
     File(PathBuf),
     Default,
 }
@@ -35,7 +36,7 @@ impl IdentitySource {
                 .into_string()
                 .map_err(|_| InstallError::Secret("AGE_IDENTITY is not valid UTF-8".into()))?;
             if !identity.trim().is_empty() {
-                return Ok(Self::Direct(identity));
+                return Ok(Self::Direct(Zeroizing::new(identity)));
             }
         }
         if let Some(path) = std::env::var_os("AGE_IDENTITIES") {
@@ -54,7 +55,25 @@ pub enum SecretMode {
 }
 
 pub trait IdentityPrompt {
-    fn prompt_identity(&mut self) -> Result<Option<String>>;
+    fn prompt_identity(&mut self) -> Result<Option<Zeroizing<String>>>;
+}
+
+pub struct TerminalIdentityPrompt<'a> {
+    terminal: &'a mut dyn TerminalIo,
+}
+
+impl<'a> TerminalIdentityPrompt<'a> {
+    pub fn new(terminal: &'a mut dyn TerminalIo) -> Self {
+        Self { terminal }
+    }
+}
+
+impl IdentityPrompt for TerminalIdentityPrompt<'_> {
+    fn prompt_identity(&mut self) -> Result<Option<Zeroizing<String>>> {
+        self.terminal
+            .read_line("Age identity file path or key (default not found): ")
+            .map(|value| value.map(Zeroizing::new))
+    }
 }
 
 pub struct ResolvedIdentities {
@@ -85,7 +104,7 @@ pub fn resolve_identity(
     let (identity_text, source_description) = match source {
         IdentitySource::Direct(identity) => (Some(identity), "AGE_IDENTITY".to_owned()),
         IdentitySource::File(path) => match std::fs::read_to_string(&path) {
-            Ok(contents) => (Some(contents), path.display().to_string()),
+            Ok(contents) => (Some(Zeroizing::new(contents)), path.display().to_string()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 (None, path.display().to_string())
             }
@@ -99,7 +118,7 @@ pub fn resolve_identity(
         IdentitySource::Default => {
             let path = platform::default_identity_path()?;
             match std::fs::read_to_string(&path) {
-                Ok(contents) => (Some(contents), path.display().to_string()),
+                Ok(contents) => (Some(Zeroizing::new(contents)), path.display().to_string()),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                     (None, path.display().to_string())
                 }
@@ -128,11 +147,11 @@ pub fn resolve_identity(
                     ))),
                 };
             };
-            let value = value.trim().to_owned();
+            let value = Zeroizing::new(value.trim().to_owned());
             let prompted_source = if value.starts_with("AGE-SECRET-KEY-") {
                 IdentitySource::Direct(value)
             } else {
-                IdentitySource::File(PathBuf::from(value))
+                IdentitySource::File(PathBuf::from(value.as_str()))
             };
             return resolve_identity(prompted_source, mode, None);
         }
@@ -189,11 +208,10 @@ pub fn decrypt_bundle_with_prompt(
     let mut reader = decryptor
         .decrypt(identities.as_identity_iter())
         .map_err(|error| decryption_error(bundle, error))?;
-    let mut plaintext = Vec::new();
-    std::io::Read::read_to_end(&mut reader, &mut plaintext)
+    let mut plaintext = Zeroizing::new(Vec::new());
+    std::io::Read::read_to_end(&mut reader, plaintext.as_mut())
         .map_err(|error| decryption_error(bundle, error))?;
     let values = parse_secret_values(&plaintext)?;
-    plaintext.fill(0);
     Ok(Some(SecretScope { values }))
 }
 

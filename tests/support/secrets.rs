@@ -3,11 +3,13 @@ use std::path::{Path, PathBuf};
 use age::secrecy::ExposeSecret;
 use age::x25519;
 use dotfiles::secrets::{IdentitySource, SecretValues};
+use zeroize::Zeroizing;
 
 pub struct EncryptedFixture {
     payload: Vec<u8>,
     identity: IdentitySource,
     identity_text: String,
+    temp_dir: tempfile::TempDir,
 }
 
 impl EncryptedFixture {
@@ -17,8 +19,9 @@ impl EncryptedFixture {
         let identity_text = identity.to_string().expose_secret().to_owned();
         Self {
             payload,
-            identity: IdentitySource::Direct(identity_text.clone()),
+            identity: IdentitySource::Direct(Zeroizing::new(identity_text.clone())),
             identity_text,
+            temp_dir: tempfile::tempdir().unwrap(),
         }
     }
 
@@ -39,7 +42,17 @@ impl EncryptedFixture {
     }
 
     pub fn temp_plaintext_files(&self) -> Vec<PathBuf> {
-        Vec::new()
+        std::fs::read_dir(self.temp_dir.path())
+            .unwrap()
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| {
+                path.is_file()
+                    && path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.contains(".env") || name.contains("identity"))
+            })
+            .collect()
     }
 }
 

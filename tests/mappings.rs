@@ -3,7 +3,7 @@ mod support;
 use dotfiles::assets::asset_bytes;
 use dotfiles::mappings::{apply_mapping, backup_root, resolve_target};
 use dotfiles::model::{Platform, Target};
-use dotfiles::platform::PlatformOps;
+use dotfiles::platform::{PlatformOps, SystemTimestamp};
 use std::fs;
 use std::sync::{Mutex, OnceLock};
 use support::mappings::{
@@ -16,7 +16,7 @@ static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 fn existing_target_is_backed_up_and_embedded_asset_is_a_regular_file() {
     let fixture = MappingFixture::new();
     fixture.write_target(".gitconfig", b"old");
-    apply_mapping(&fixture.ops, git_mapping(), b"new").unwrap();
+    apply_mapping(&fixture.ops, git_mapping(), b"new", &SystemTimestamp).unwrap();
 
     assert_eq!(fixture.read_target(".gitconfig"), b"new");
     assert!(!fixture.target(".gitconfig").is_symlink());
@@ -27,7 +27,13 @@ fn existing_target_is_backed_up_and_embedded_asset_is_a_regular_file() {
 fn first_install_materializes_the_embedded_asset() {
     let fixture = MappingFixture::new();
     let mapping = git_mapping();
-    apply_mapping(&fixture.ops, mapping, asset_bytes(mapping.asset)).unwrap();
+    apply_mapping(
+        &fixture.ops,
+        mapping,
+        asset_bytes(mapping.asset),
+        &SystemTimestamp,
+    )
+    .unwrap();
 
     assert_eq!(
         fixture.read_target(".gitconfig"),
@@ -40,7 +46,7 @@ fn first_install_materializes_the_embedded_asset() {
 fn failed_write_restores_the_previous_target() {
     let fixture = MappingFixture::with_failing_rename();
     fixture.write_target(".gitconfig", b"old");
-    assert!(apply_mapping(&fixture.ops, git_mapping(), b"new").is_err());
+    assert!(apply_mapping(&fixture.ops, git_mapping(), b"new", &SystemTimestamp).is_err());
     assert_eq!(fixture.read_target(".gitconfig"), b"old");
 }
 
@@ -51,7 +57,7 @@ fn existing_directory_is_backed_up_before_file_replacement() {
     fs::create_dir_all(&target).unwrap();
     fs::write(target.join("old"), b"old").unwrap();
 
-    apply_mapping(&fixture.ops, git_mapping(), b"new").unwrap();
+    apply_mapping(&fixture.ops, git_mapping(), b"new", &SystemTimestamp).unwrap();
 
     assert_eq!(fixture.read_target(".gitconfig"), b"new");
     assert_eq!(fixture.read_backup(".gitconfig/old"), b"old");
@@ -68,7 +74,7 @@ fn existing_symlink_is_backed_up_without_following_it() {
     let target = fixture.target(".gitconfig");
     symlink(&source, &target).unwrap();
 
-    apply_mapping(&fixture.ops, git_mapping(), b"new").unwrap();
+    apply_mapping(&fixture.ops, git_mapping(), b"new", &SystemTimestamp).unwrap();
 
     assert_eq!(fixture.read_target(".gitconfig"), b"new");
     assert!(!target.is_symlink());
@@ -123,7 +129,7 @@ fn backup_setup_failure_removes_staged_file() {
     fs::create_dir_all(fixture.ops.context().backup_root.parent().unwrap()).unwrap();
     fs::write(&fixture.ops.context().backup_root, b"not-a-directory").unwrap();
 
-    assert!(apply_mapping(&fixture.ops, git_mapping(), b"new").is_err());
+    assert!(apply_mapping(&fixture.ops, git_mapping(), b"new", &SystemTimestamp).is_err());
     let staged = fs::read_dir(fixture.ops.context().home.clone())
         .unwrap()
         .filter_map(Result::ok)

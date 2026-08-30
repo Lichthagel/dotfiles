@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::assets::asset_bytes;
 use crate::error::{InstallError, Result};
 use crate::model::{Platform, Target};
-use crate::platform::{BackupRecord, PlatformOps};
+use crate::platform::{BackupRecord, PlatformOps, TimestampProvider};
 use crate::registry::{MappingSpec, ModuleSpec};
 
 pub fn resolve_target(ops: &dyn PlatformOps, target: Target) -> Result<PathBuf> {
@@ -18,6 +18,7 @@ pub fn apply_mapping(
     ops: &dyn PlatformOps,
     mapping: &MappingSpec,
     bytes: &[u8],
+    timestamp: &dyn TimestampProvider,
 ) -> Result<BackupRecord> {
     if ops.platform() != mapping.platform {
         return Err(InstallError::Mapping(format!(
@@ -33,20 +34,22 @@ pub fn apply_mapping(
         )));
     }
     let target = resolve_target(ops, mapping.target)?;
-    ops.replace_file(&target, bytes)
+    ops.replace_file_with_timestamp(&target, bytes, timestamp)
 }
 
 pub fn apply_embedded_mapping(
     ops: &dyn PlatformOps,
     mapping: &MappingSpec,
+    timestamp: &dyn TimestampProvider,
 ) -> Result<BackupRecord> {
-    apply_mapping(ops, mapping, asset_bytes(mapping.asset))
+    apply_mapping(ops, mapping, asset_bytes(mapping.asset), timestamp)
 }
 
 pub fn apply_module_mappings(
     ops: &dyn PlatformOps,
     module: &ModuleSpec,
     resolved_modules: &[String],
+    timestamp: &dyn TimestampProvider,
 ) -> Result<Vec<BackupRecord>> {
     let mut backups = Vec::new();
     for mapping in module.mappings {
@@ -58,7 +61,7 @@ pub fn apply_module_mappings(
         {
             continue;
         }
-        backups.push(apply_embedded_mapping(ops, mapping)?);
+        backups.push(apply_embedded_mapping(ops, mapping, timestamp)?);
     }
     Ok(backups)
 }

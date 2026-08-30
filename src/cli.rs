@@ -206,8 +206,18 @@ pub fn parse_modules(value: &str) -> Result<Vec<String>> {
 }
 
 pub fn validate_modules(modules: &[String], platform: Platform) -> Result<()> {
+    validate_modules_against(modules, platform, registry::modules())
+}
+
+pub fn validate_modules_against(
+    modules: &[String],
+    platform: Platform,
+    registry: &[ModuleSpec],
+) -> Result<()> {
     for module_id in modules {
-        let module = registry::find_module(module_id)
+        let module = registry
+            .iter()
+            .find(|module| module.id == module_id)
             .ok_or_else(|| InstallError::Usage(format!("unknown module: {module_id}")))?;
         if !module.supports(platform) {
             return Err(InstallError::Usage(format!(

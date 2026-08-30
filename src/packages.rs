@@ -18,6 +18,10 @@ pub struct CommandOutput {
 pub trait CommandRunner {
     fn available(&self, program: &str) -> bool;
 
+    fn refresh(&self) -> Result<()> {
+        Ok(())
+    }
+
     fn run(
         &self,
         program: &str,

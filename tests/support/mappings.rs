@@ -3,7 +3,10 @@ use std::path::{Path, PathBuf};
 
 use dotfiles::error::Result;
 use dotfiles::model::{Platform, Target};
-use dotfiles::platform::{replace_file_at, BackupRecord, PathContext, PlatformOps};
+use dotfiles::platform::{
+    replace_file_at, replace_file_at_with_timestamp, BackupRecord, PathContext, PlatformOps,
+    TimestampProvider,
+};
 use dotfiles::registry::MappingSpec;
 use tempfile::TempDir;
 
@@ -48,6 +51,15 @@ impl PlatformOps for TestPathContext {
 
     fn replace_file(&self, target: &Path, bytes: &[u8]) -> Result<BackupRecord> {
         replace_file_at(&self.context, target, bytes, self.fail_rename)
+    }
+
+    fn replace_file_with_timestamp(
+        &self,
+        target: &Path,
+        bytes: &[u8],
+        timestamp: &dyn TimestampProvider,
+    ) -> Result<BackupRecord> {
+        replace_file_at_with_timestamp(&self.context, target, bytes, self.fail_rename, timestamp)
     }
 
     fn set_private_file_permissions(&self, _path: &Path) -> Result<()> {

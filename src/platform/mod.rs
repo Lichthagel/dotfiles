@@ -48,6 +48,22 @@ pub fn package_manager_program(
     }
 }
 
+pub trait TimestampProvider {
+    fn timestamp(&self) -> String;
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SystemTimestamp;
+
+impl TimestampProvider for SystemTimestamp {
+    fn timestamp(&self) -> String {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
+        format!("{}-{:09}", now.as_secs(), now.subsec_nanos())
+    }
+}
+
 pub trait PlatformOps {
     fn platform(&self) -> Platform;
     fn path_context(&self) -> &PathContext;
@@ -67,7 +83,15 @@ pub trait PlatformOps {
         resolve_target_in_context(self.path_context(), target)
     }
     fn replace_file(&self, target: &Path, bytes: &[u8]) -> Result<BackupRecord> {
-        replace_file_at(self.path_context(), target, bytes, false)
+        self.replace_file_with_timestamp(target, bytes, &SystemTimestamp)
+    }
+    fn replace_file_with_timestamp(
+        &self,
+        target: &Path,
+        bytes: &[u8],
+        timestamp: &dyn TimestampProvider,
+    ) -> Result<BackupRecord> {
+        replace_file_at_with_timestamp(self.path_context(), target, bytes, false, timestamp)
     }
     fn replace_private_file(&self, target: &Path, bytes: &[u8]) -> Result<BackupRecord> {
         let record = self.replace_file(target, bytes)?;
@@ -126,13 +150,6 @@ fn join_relative(root: &Path, relative: &str) -> Result<PathBuf> {
     Ok(root.join(relative_path))
 }
 
-fn timestamp() -> String {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    format!("{}-{:09}", now.as_secs(), now.subsec_nanos())
-}
-
 fn relative_backup_path(context: &PathContext, target: &Path) -> PathBuf {
     if let Ok(relative) = target.strip_prefix(&context.home) {
         return relative.to_path_buf();
@@ -152,6 +169,16 @@ pub fn replace_file_at(
     bytes: &[u8],
     fail_rename: bool,
 ) -> Result<BackupRecord> {
+    replace_file_at_with_timestamp(context, target, bytes, fail_rename, &SystemTimestamp)
+}
+
+pub fn replace_file_at_with_timestamp(
+    context: &PathContext,
+    target: &Path,
+    bytes: &[u8],
+    fail_rename: bool,
+    timestamp: &dyn TimestampProvider,
+) -> Result<BackupRecord> {
     let parent = target.parent().ok_or_else(|| {
         InstallError::Mapping(format!("target has no parent: {}", target.display()))
     })?;
@@ -163,7 +190,7 @@ pub fn replace_file_at(
         let candidate = parent.join(format!(
             ".dotfiles-{}-{}-{}.tmp",
             std::process::id(),
-            timestamp(),
+            timestamp.timestamp(),
             attempt
         ));
         match OpenOptions::new()
@@ -209,7 +236,7 @@ pub fn replace_file_at(
     let backup = if existed {
         let backup = context
             .backup_root
-            .join(timestamp())
+            .join(timestamp.timestamp())
             .join(relative_backup_path(context, target));
         if let Some(parent) = backup.parent() {
             if let Err(error) = fs::create_dir_all(parent) {

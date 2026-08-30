@@ -18,6 +18,7 @@ pub struct FakeRunner {
     fail_programs: BTreeSet<String>,
     atuin_status: Option<bool>,
     calls: Arc<Mutex<Vec<Invocation>>>,
+    refreshes: Arc<Mutex<usize>>,
 }
 
 impl FakeRunner {
@@ -32,6 +33,7 @@ impl FakeRunner {
             fail_programs: BTreeSet::new(),
             atuin_status: None,
             calls: Arc::new(Mutex::new(Vec::new())),
+            refreshes: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -51,6 +53,7 @@ impl FakeRunner {
             fail_programs: BTreeSet::new(),
             atuin_status: None,
             calls: Arc::new(Mutex::new(Vec::new())),
+            refreshes: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -93,6 +96,10 @@ impl FakeRunner {
 
     pub fn calls(&self) -> Vec<Invocation> {
         self.calls.lock().unwrap().clone()
+    }
+
+    pub fn refresh_count(&self) -> usize {
+        *self.refreshes.lock().unwrap()
     }
 
     pub fn last_program(&self) -> String {
@@ -186,6 +193,11 @@ impl FakeRunner {
 impl CommandRunner for FakeRunner {
     fn available(&self, program: &str) -> bool {
         self.available.lock().unwrap().contains(program)
+    }
+
+    fn refresh(&self) -> dotfiles::error::Result<()> {
+        *self.refreshes.lock().unwrap() += 1;
+        Ok(())
     }
 
     fn run(

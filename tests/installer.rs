@@ -4,7 +4,9 @@ use std::fs;
 
 use dotfiles::cli::InstallRequest;
 use dotfiles::engine::{install, resolve_modules};
-use dotfiles::model::Platform;
+use dotfiles::engine::{ordered_phases, resolve_modules_from_registry};
+use dotfiles::model::{Platform, SetupKind};
+use dotfiles::registry::ModuleSpec;
 use dotfiles::run;
 use support::installer::{test_context, InstallFixture};
 use support::runner::FakeRunner;
@@ -13,6 +15,7 @@ use support::runner::FakeRunner;
 fn git_installs_before_mapping() {
     let runner = FakeRunner::apt_without_mise_then_mise_after_install();
     let mut fixture = InstallFixture::new(Platform::Linux);
+    fs::write(fixture.target(".gitconfig"), b"old").unwrap();
     install(
         InstallRequest::explicit(["git"], true, Platform::Linux),
         test_context(&mut fixture, &runner),
@@ -20,6 +23,18 @@ fn git_installs_before_mapping() {
     .unwrap();
 
     assert_eq!(runner.package_log(), ["git"]);
+    assert_eq!(runner.refresh_count(), 1);
+    assert_eq!(
+        fs::read(
+            fixture
+                .ops
+                .context()
+                .backup_root
+                .join("fixed-timestamp/.gitconfig")
+        )
+        .unwrap(),
+        b"old"
+    );
     assert_eq!(
         fs::read(fixture.target(".gitconfig")).unwrap(),
         include_bytes!("../modules/git/gitconfig")
@@ -39,11 +54,12 @@ fn provider_phase_precedes_dependent_package_phase() {
 }
 
 #[test]
-fn required_shell_module_is_resolved_for_prompt_integration() {
+fn required_shell_module_is_resolved_before_prompt_integration() {
     let runner = FakeRunner::available(["apt", "dpkg-query", "run0", "apt-get"]);
     let resolved = resolve_modules(&["oh-my-posh".into()], Platform::Linux, &runner).unwrap();
-    assert!(resolved.iter().any(|module| module.id == "bash"));
-    assert!(resolved.iter().any(|module| module.id == "oh-my-posh"));
+    let phases = ordered_phases(&resolved).unwrap();
+    let ids: Vec<_> = phases.iter().map(|phase| phase[0].id).collect();
+    assert_eq!(ids, ["bash", "oh-my-posh"]);
 }
 
 #[test]
@@ -110,6 +126,46 @@ fn list_does_not_probe_or_install_packages() {
     } else {
         assert!(text.contains("bash - Bash profile"));
     }
+}
+
+#[test]
+fn synthetic_dependency_cycles_are_rejected() {
+    use dotfiles::registry::MappingSpec;
+
+    static A_REQUIRES: &[&str] = &["cycle-b"];
+    static B_REQUIRES: &[&str] = &["cycle-a"];
+    static EMPTY_PACKAGES: &[dotfiles::registry::PackageSpec] = &[];
+    static EMPTY_MAPPINGS: &[MappingSpec] = &[];
+    static A: ModuleSpec = ModuleSpec {
+        id: "cycle-a",
+        description: "cycle a",
+        platforms: &[Platform::Linux],
+        default_selected: false,
+        provides: None,
+        requires: A_REQUIRES,
+        packages: EMPTY_PACKAGES,
+        mappings: EMPTY_MAPPINGS,
+        setup: SetupKind::None,
+        secret_bundle: None,
+    };
+    static B: ModuleSpec = ModuleSpec {
+        id: "cycle-b",
+        description: "cycle b",
+        platforms: &[Platform::Linux],
+        default_selected: false,
+        provides: None,
+        requires: B_REQUIRES,
+        packages: EMPTY_PACKAGES,
+        mappings: EMPTY_MAPPINGS,
+        setup: SetupKind::None,
+        secret_bundle: None,
+    };
+    static CYCLE: &[ModuleSpec] = &[A, B];
+
+    let runner = FakeRunner::available(std::iter::empty::<&str>());
+    let error = resolve_modules_from_registry(&["cycle-a".into()], Platform::Linux, &runner, CYCLE)
+        .unwrap_err();
+    assert!(error.to_string().contains("cycle-a -> cycle-b -> cycle-a"));
 }
 
 #[test]

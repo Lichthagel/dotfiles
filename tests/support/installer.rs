@@ -4,7 +4,7 @@ use dotfiles::cli::{TerminalIo, TerminalKey};
 use dotfiles::engine::InstallContext;
 use dotfiles::error::Result;
 use dotfiles::model::Platform;
-use dotfiles::platform::{PathContext, PlatformOps};
+use dotfiles::platform::{PathContext, PlatformOps, TimestampProvider};
 use dotfiles::setup::HttpClient;
 use tempfile::TempDir;
 
@@ -45,11 +45,20 @@ impl TerminalIo for TestTerminal {
     }
 }
 
+pub struct FixedTimestamp;
+
+impl TimestampProvider for FixedTimestamp {
+    fn timestamp(&self) -> String {
+        "fixed-timestamp".into()
+    }
+}
+
 pub struct InstallFixture {
     pub temp: TempDir,
     pub ops: TestPathContext,
     pub http: TestHttp,
     pub terminal: TestTerminal,
+    pub timestamp: FixedTimestamp,
 }
 
 impl InstallFixture {
@@ -62,6 +71,7 @@ impl InstallFixture {
             ops,
             http: TestHttp,
             terminal: TestTerminal,
+            timestamp: FixedTimestamp,
         }
     }
 
@@ -71,6 +81,7 @@ impl InstallFixture {
             runner,
             http: &self.http,
             terminal: &mut self.terminal,
+            timestamp: &self.timestamp,
         }
     }
 

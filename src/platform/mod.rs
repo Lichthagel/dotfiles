@@ -4,7 +4,7 @@ use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::{InstallError, Result};
-use crate::model::{Platform, Target};
+use crate::model::{PackageManager, Platform, Target};
 
 #[cfg(unix)]
 pub mod unix;
@@ -32,6 +32,20 @@ impl PathContext {
 pub struct BackupRecord {
     pub target: PathBuf,
     pub backup: Option<PathBuf>,
+}
+
+pub fn package_manager_program(
+    platform: Platform,
+    manager: PackageManager,
+) -> Option<&'static str> {
+    match platform {
+        #[cfg(unix)]
+        _ => unix::package_manager_program(platform, manager),
+        #[cfg(windows)]
+        _ => windows::package_manager_program(platform, manager),
+        #[cfg(not(any(unix, windows)))]
+        _ => None,
+    }
 }
 
 pub trait PlatformOps {

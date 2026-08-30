@@ -1,9 +1,30 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::Result;
-use crate::model::Platform;
+use crate::model::{PackageManager, Platform};
 
 use super::{replace_file_at, set_private_permissions, BackupRecord, PathContext, PlatformOps};
+
+pub(crate) const fn package_manager_program(
+    platform: Platform,
+    manager: PackageManager,
+) -> Option<&'static str> {
+    match (platform, manager) {
+        (
+            Platform::Linux,
+            PackageManager::Apt
+            | PackageManager::Dnf
+            | PackageManager::Pacman
+            | PackageManager::Brew
+            | PackageManager::Mise,
+        ) => Some(manager.label()),
+        (Platform::Windows, PackageManager::Winget) => Some("winget"),
+        (Platform::Windows, PackageManager::Scoop) => Some("scoop"),
+        (Platform::Windows, PackageManager::Brew) => Some("brew"),
+        (Platform::Windows, PackageManager::Mise) => Some("mise"),
+        _ => None,
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct UnixPlatform {

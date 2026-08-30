@@ -2,6 +2,7 @@ pub mod assets;
 pub mod error;
 pub mod mappings;
 pub mod model;
+pub mod packages;
 pub mod platform;
 pub mod registry;
 

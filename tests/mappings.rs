@@ -162,7 +162,39 @@ fn private_file_replacement_sets_mode_0600() {
     let target = home.join("credential");
     platform.replace_private_file(&target, b"secret").unwrap();
     assert_eq!(
-        fs::metadata(target).unwrap().permissions().mode() & 0o777,
+        fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn private_file_backup_is_protected_before_replacement() {
+    use dotfiles::platform::unix::UnixPlatform;
+    use std::os::unix::fs::PermissionsExt;
+    use tempfile::tempdir;
+
+    let temp = tempdir().unwrap();
+    let home = temp.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let platform = UnixPlatform::new(dotfiles::platform::PathContext::new(
+        home.clone(),
+        None,
+        temp.path().join("state"),
+    ));
+    let target = home.join("credential");
+    fs::write(&target, b"old").unwrap();
+    platform.replace_private_file(&target, b"new").unwrap();
+    let backup_root = temp.path().join("state/dotfiles/backups");
+    let timestamp = fs::read_dir(&backup_root)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let backup = timestamp.join("credential");
+    assert_eq!(
+        fs::metadata(backup).unwrap().permissions().mode() & 0o777,
         0o600
     );
 }

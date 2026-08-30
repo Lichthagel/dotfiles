@@ -9,6 +9,7 @@ use dotfiles::error::Result;
 use dotfiles::model::Platform;
 use dotfiles::platform::{PathContext, PlatformOps};
 use dotfiles::secrets::SecretValues;
+use dotfiles::setup::http::MAX_THEME_FILE_BYTES;
 use dotfiles::setup::{HttpClient, SetupContext};
 use tempfile::TempDir;
 
@@ -46,6 +47,27 @@ impl FakeHttp {
         client
     }
 
+    pub fn too_many_themes() -> Self {
+        let client = Self::default();
+        let tree = (0..257)
+            .map(|index| {
+                serde_json::json!({
+                    "path": format!("themes/theme-{index}.json"),
+                    "type": "blob"
+                })
+            })
+            .collect::<Vec<_>>();
+        client.set_json(serde_json::json!({"tree": tree}));
+        client.set_bytes("default", br#"{"name":"theme"}"#.to_vec());
+        client
+    }
+
+    pub fn oversized_theme() -> Self {
+        let client = Self::themes();
+        client.set_bytes("frappe", vec![b' '; MAX_THEME_FILE_BYTES + 1]);
+        client
+    }
+
     fn set_json(&self, value: serde_json::Value) {
         *self.json.lock().unwrap() = Some(value);
     }
@@ -73,8 +95,10 @@ impl HttpClient for FakeHttp {
         }
         let key = if url.contains("frappe") {
             "frappe"
-        } else {
+        } else if url.contains("mocha") {
             "mocha"
+        } else {
+            "default"
         };
         self.bytes
             .lock()
@@ -142,6 +166,10 @@ impl OpenCodeFixture {
                     .unwrap(),
             ),
         )
+    }
+
+    pub fn with_http(http: FakeHttp) -> Self {
+        Self::new(http, Some(all_secrets()))
     }
 
     fn new(http: FakeHttp, secrets: Option<SecretValues>) -> Self {

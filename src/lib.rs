@@ -50,37 +50,50 @@ where
         return print_module_list(platform, io);
     }
 
+    let interactive_modules = explicit_request.is_none();
+    let explicit_modules = explicit_request.map(|request| request.modules);
     let mut terminal = CrosstermTerminal::new(io);
-    let modules = match explicit_request {
-        Some(request) => request.modules,
-        None => {
-            let modules = supported_modules(platform);
-            select_modules(&modules, &mut terminal)?
-        }
-    };
-    if modules.is_empty() {
-        writeln!(io, "No applications selected.").map_err(InstallError::Io)?;
-        return Ok(());
-    }
-
-    let request = InstallRequest {
-        modules,
-        yes: cli.yes,
-        list: false,
-        platform,
-    };
     let platform_ops = default_platform_ops()?;
     let runner = SystemCommandRunner;
     let http = ReqwestHttpClient::new()?;
     let timestamp = SystemTimestamp;
-    install(
-        request,
-        InstallContext {
-            platform: platform_ops.as_ref(),
-            runner: &runner,
-            http: &http,
-            terminal: &mut terminal,
-            timestamp: &timestamp,
-        },
-    )
+
+    loop {
+        let modules = match &explicit_modules {
+            Some(modules) => modules.clone(),
+            None => {
+                let available = supported_modules(platform);
+                select_modules(&available, &mut terminal)?
+            }
+        };
+        if modules.is_empty() {
+            writeln!(io, "No applications selected.").map_err(InstallError::Io)?;
+            return Ok(());
+        }
+
+        let request = if interactive_modules {
+            InstallRequest::interactive(modules, cli.yes, platform)
+        } else {
+            InstallRequest::explicit(modules, cli.yes, platform)
+        };
+        let outcome = install(
+            request,
+            InstallContext {
+                platform: platform_ops.as_ref(),
+                runner: &runner,
+                http: &http,
+                terminal: &mut terminal,
+                timestamp: &timestamp,
+            },
+        )?;
+        match outcome {
+            engine::InstallOutcome::Completed => return Ok(()),
+            engine::InstallOutcome::BackToModuleSelection if interactive_modules => continue,
+            engine::InstallOutcome::BackToModuleSelection => {
+                return Err(InstallError::Usage(
+                    "module selection is fixed by --modules".into(),
+                ))
+            }
+        }
+    }
 }

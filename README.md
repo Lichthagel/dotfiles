@@ -101,10 +101,12 @@ platform default identity path is used otherwise. No external `age` command or
 age package is required by the installer.
 
 Shell modules load numbered integration drop-ins from their platform-specific
-profile directories. Select both modules to enable an integration:
-`--modules bash,atuin` installs Atuin's Bash drop-in, and
-`--modules powershell,atuin` installs its PowerShell drop-in. Selecting only
-`atuin` performs package and login setup without changing a shell profile.
+profile directories. Atuin's shell mapping declares its shell requirement, so
+selecting `atuin` resolves the platform shell module and installs the matching
+profile drop-in automatically. Use `--modules bash,atuin` on Linux or
+`--modules powershell,atuin` on Windows when selecting the shell explicitly;
+selecting only `atuin` still performs package/login setup and its required shell
+integration.
 
 ### OpenCode
 

@@ -225,6 +225,7 @@ fn terminal_identity_prompt_uses_terminal_line_input() {
         .prompts
         .iter()
         .any(|prompt| prompt.contains("Age identity")));
+    assert_eq!(terminal.secret_reads, 1);
 }
 
 #[test]
@@ -262,6 +263,7 @@ impl IdentityPrompt for Prompt {
 struct LineTerminal {
     lines: Vec<String>,
     prompts: Vec<String>,
+    secret_reads: usize,
 }
 
 impl LineTerminal {
@@ -269,6 +271,7 @@ impl LineTerminal {
         Self {
             lines: lines.into_iter().collect(),
             prompts: Vec::new(),
+            secret_reads: 0,
         }
     }
 }
@@ -287,6 +290,12 @@ impl TerminalIo for LineTerminal {
     fn read_line(&mut self, prompt: &str) -> Result<Option<String>> {
         self.prompts.push(prompt.to_owned());
         Ok(self.lines.pop())
+    }
+
+    fn read_secret(&mut self, prompt: &str) -> Result<Option<Zeroizing<String>>> {
+        self.secret_reads += 1;
+        self.read_line(prompt)
+            .map(|value| value.map(Zeroizing::new))
     }
 
     fn clear(&mut self) -> Result<()> {

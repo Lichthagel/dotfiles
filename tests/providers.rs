@@ -6,7 +6,9 @@ use std::sync::{Mutex, OnceLock};
 
 use dotfiles::error::Result;
 use dotfiles::model::{PackageManager, Platform};
-use dotfiles::packages::{CommandOutput, CommandRunner, ManagerAdapter, PackageManagerAdapter};
+use dotfiles::packages::{
+    CommandOutput, CommandRunner, ManagerAdapter, PackageManagerAdapter, SystemCommandRunner,
+};
 use dotfiles::setup::providers::{install_homebrew, install_scoop};
 use dotfiles::setup::{HttpClient, SetupContext};
 use support::mappings::MappingFixture;
@@ -28,14 +30,16 @@ impl HttpClient for NoHttp {
 #[derive(Default)]
 struct CloneRunner {
     calls: Mutex<Vec<(String, Vec<String>)>>,
-    available: Vec<String>,
+    available: std::sync::Arc<Mutex<std::collections::BTreeSet<String>>>,
 }
 
 impl CloneRunner {
     fn new(available: &[&str]) -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
-            available: available.iter().map(|value| (*value).into()).collect(),
+            available: std::sync::Arc::new(Mutex::new(
+                available.iter().map(|value| (*value).into()).collect(),
+            )),
         }
     }
 
@@ -46,11 +50,7 @@ impl CloneRunner {
 
 impl CommandRunner for CloneRunner {
     fn available(&self, program: &str) -> bool {
-        self.available.iter().any(|value| value == program)
-            || std::env::var_os("PATH")
-                .into_iter()
-                .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
-                .any(|directory| directory.join(program).is_file())
+        self.available.lock().unwrap().contains(program) || SystemCommandRunner.available(program)
     }
 
     fn run(
@@ -67,8 +67,17 @@ impl CommandRunner for CloneRunner {
         if program == "git" && args.first().map(String::as_str) == Some("clone") {
             let destination = PathBuf::from(args.last().expect("clone destination"));
             fs::create_dir_all(destination.join("bin")).unwrap();
-            fs::write(destination.join("bin/brew"), b"#!/bin/sh\n").unwrap();
+            let brew = destination.join("bin/brew");
+            fs::write(&brew, b"#!/bin/sh\n").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&brew, fs::Permissions::from_mode(0o755)).unwrap();
+            }
             fs::write(destination.join("bin/scoop.ps1"), b"Write-Output scoop\n").unwrap();
+            if destination.join("bin/brew").is_file() {
+                self.available.lock().unwrap().insert("brew".into());
+            }
         }
         Ok(CommandOutput {
             status: 0,

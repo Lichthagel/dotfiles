@@ -12,7 +12,7 @@ ignored by Git.
 
 ## Atuin
 
-Create a local plaintext file with these values:
+Create a local plaintext file at `secrets/atuin.env` with these values:
 
 ```text
 ATUIN_USERNAME=your-username
@@ -24,8 +24,8 @@ ATUIN_SYNC_ADDRESS=
 Encrypt it to the repository path using a recipient from your age identity:
 
 ```sh
-age -r AGE_RECIPIENT -o secrets/atuin.env.age atuin.env
-rm atuin.env
+age -r AGE_RECIPIENT -o secrets/atuin.env.age secrets/atuin.env
+rm secrets/atuin.env
 ```
 
 When `atuin` is selected, the binary reads the encrypted bundle and expects

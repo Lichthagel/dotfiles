@@ -94,19 +94,14 @@ pub trait PlatformOps {
         replace_file_at_with_timestamp(self.path_context(), target, bytes, false, timestamp)
     }
     fn replace_private_file(&self, target: &Path, bytes: &[u8]) -> Result<BackupRecord> {
-        let record = self.replace_file(target, bytes)?;
-        if let Err(error) = self.set_private_file_permissions(target) {
-            let _ = fs::remove_file(target);
-            if let Some(backup) = &record.backup {
-                if let Err(restore_error) = fs::rename(backup, target) {
-                    return Err(InstallError::Mapping(format!(
-                        "private permission setup failed: {error}; restoring backup failed: {restore_error}"
-                    )));
-                }
-            }
-            return Err(error);
-        }
-        Ok(record)
+        replace_private_file_at_with_timestamp(
+            self.path_context(),
+            target,
+            bytes,
+            false,
+            &SystemTimestamp,
+            &|path| self.set_private_file_permissions(path),
+        )
     }
     fn set_private_file_permissions(&self, path: &Path) -> Result<()>;
 }
@@ -179,6 +174,37 @@ pub fn replace_file_at_with_timestamp(
     fail_rename: bool,
     timestamp: &dyn TimestampProvider,
 ) -> Result<BackupRecord> {
+    replace_file_at_with_timestamp_internal(context, target, bytes, fail_rename, timestamp, None)
+}
+
+type PrivateProtector<'a> = Option<&'a dyn Fn(&Path) -> Result<()>>;
+
+pub fn replace_private_file_at_with_timestamp(
+    context: &PathContext,
+    target: &Path,
+    bytes: &[u8],
+    fail_rename: bool,
+    timestamp: &dyn TimestampProvider,
+    protect: &dyn Fn(&Path) -> Result<()>,
+) -> Result<BackupRecord> {
+    replace_file_at_with_timestamp_internal(
+        context,
+        target,
+        bytes,
+        fail_rename,
+        timestamp,
+        Some(protect),
+    )
+}
+
+fn replace_file_at_with_timestamp_internal(
+    context: &PathContext,
+    target: &Path,
+    bytes: &[u8],
+    fail_rename: bool,
+    timestamp: &dyn TimestampProvider,
+    protect: PrivateProtector<'_>,
+) -> Result<BackupRecord> {
     let parent = target.parent().ok_or_else(|| {
         InstallError::Mapping(format!("target has no parent: {}", target.display()))
     })?;
@@ -225,6 +251,12 @@ pub fn replace_file_at_with_timestamp(
         let _ = fs::remove_file(&stage_path);
         return Err(error);
     }
+    if let Some(protect) = protect {
+        if let Err(error) = protect(&stage_path) {
+            let _ = fs::remove_file(&stage_path);
+            return Err(error);
+        }
+    }
 
     let existed = match target_presence(fs::symlink_metadata(target)) {
         Ok(existed) => existed,
@@ -247,6 +279,17 @@ pub fn replace_file_at_with_timestamp(
         if let Err(error) = fs::rename(target, &backup) {
             let _ = fs::remove_file(&stage_path);
             return Err(error.into());
+        }
+        if let Some(protect) = protect {
+            if let Err(error) = protect(&backup) {
+                let _ = fs::remove_file(&stage_path);
+                if let Err(restore_error) = fs::rename(&backup, target) {
+                    return Err(InstallError::Mapping(format!(
+                        "private backup permission setup failed: {error}; restoring backup failed: {restore_error}"
+                    )));
+                }
+                return Err(error);
+            }
         }
         Some(backup)
     } else {

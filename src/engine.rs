@@ -1,7 +1,7 @@
 use crate::cli::{select_packages, InstallRequest, PackageSelection, TerminalIo};
 use crate::error::{InstallError, Result};
 use crate::mappings::apply_module_mappings;
-use crate::model::Platform;
+use crate::model::{Platform, SetupKind};
 use crate::packages::{
     build_package_plan, install_package, CommandRunner, ManagerAdapter, PackageManagerAdapter,
 };
@@ -17,6 +17,12 @@ pub struct InstallContext<'a> {
     pub http: &'a dyn HttpClient,
     pub terminal: &'a mut dyn TerminalIo,
     pub timestamp: &'a dyn TimestampProvider,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InstallOutcome {
+    Completed,
+    BackToModuleSelection,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -194,7 +200,7 @@ pub fn ordered_phases<'a>(modules: &[&'a ModuleSpec]) -> Result<Vec<Vec<&'a Modu
     Ok(phases)
 }
 
-pub fn install(request: InstallRequest, context: InstallContext<'_>) -> Result<()> {
+pub fn install(request: InstallRequest, context: InstallContext<'_>) -> Result<InstallOutcome> {
     install_with_registry(request, context, registry::modules())
 }
 
@@ -202,9 +208,9 @@ pub fn install_with_registry(
     request: InstallRequest,
     context: InstallContext<'_>,
     modules: &[ModuleSpec],
-) -> Result<()> {
+) -> Result<InstallOutcome> {
     if request.modules.is_empty() {
-        return Ok(());
+        return Ok(InstallOutcome::Completed);
     }
     if request.platform != context.platform.platform() {
         return Err(InstallError::Usage(format!(
@@ -221,6 +227,7 @@ pub fn install_with_registry(
         .map(|module| module.id.to_owned())
         .collect::<Vec<_>>();
 
+    let mut side_effects_started = false;
     for phase in ordered_phases(&resolved)? {
         let mut package_plan =
             build_package_plan(context.runner, request.platform, &phase, request.yes)?;
@@ -228,9 +235,13 @@ pub fn install_with_registry(
             match select_packages(&mut package_plan, context.terminal)? {
                 PackageSelection::Continue => {}
                 PackageSelection::Back => {
+                    if request.allow_module_back && !side_effects_started {
+                        return Ok(InstallOutcome::BackToModuleSelection);
+                    }
                     return Err(InstallError::Usage(
-                        "module selection is fixed by --modules".into(),
-                    ))
+                        "module selection cannot return after installation has begun; rerun with --modules"
+                            .into(),
+                    ));
                 }
                 PackageSelection::Cancel => return Err(InstallError::Cancelled),
             }
@@ -258,32 +269,53 @@ pub fn install_with_registry(
         }
 
         let module = phase[0];
-        let secret_scope =
-            if let (Some(bundle), Some(mode)) = (module.secret_bundle, secret_mode(module.setup)) {
-                let mut prompt = context
-                    .terminal
-                    .is_interactive()
-                    .then(|| TerminalIdentityPrompt::new(context.terminal));
-                decrypt_embedded(
-                    bundle,
-                    mode,
-                    prompt
-                        .as_mut()
-                        .map(|prompt| prompt as &mut dyn crate::secrets::IdentityPrompt),
-                )?
-            } else {
-                None
-            };
+        let secret_scope = if module.setup == SetupKind::Atuin
+            && crate::setup::atuin::atuin_is_logged_in(context.runner)?
+        {
+            None
+        } else if let (Some(bundle), Some(mode)) = (module.secret_bundle, secret_mode(module.setup))
+        {
+            let mut prompt = context
+                .terminal
+                .is_interactive()
+                .then(|| TerminalIdentityPrompt::new(context.terminal));
+            decrypt_embedded(
+                bundle,
+                mode,
+                prompt
+                    .as_mut()
+                    .map(|prompt| prompt as &mut dyn crate::secrets::IdentityPrompt),
+            )?
+        } else {
+            None
+        };
         let setup_context = SetupContext {
             platform: context.platform,
             runner: context.runner,
             http: context.http,
             secrets: secret_scope.as_ref().map(|scope| scope.values()),
         };
+        side_effects_started = true;
         run_setup(module.setup, &setup_context)
             .map_err(|error| InstallError::Setup(format!("{}: {error}", module.id)))?;
-        apply_module_mappings(context.platform, module, &resolved_ids, context.timestamp)
-            .map_err(|error| InstallError::Mapping(format!("{}: {error}", module.id)))?;
+        let backups =
+            apply_module_mappings(context.platform, module, &resolved_ids, context.timestamp)
+                .map_err(|error| InstallError::Mapping(format!("{}: {error}", module.id)))?;
+        for backup in backups {
+            if let Some(path) = backup.backup {
+                context.terminal.write_line(&format!(
+                    "backed up: {} -> {}",
+                    backup.target.display(),
+                    path.display()
+                ))?;
+            }
+            context
+                .terminal
+                .write_line(&format!("installed: {}", backup.target.display()))?;
+        }
+        context
+            .terminal
+            .write_line(&format!("completed module: {}", module.id))?;
     }
-    Ok(())
+    Ok(InstallOutcome::Completed)
 }

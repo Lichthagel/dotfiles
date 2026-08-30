@@ -8,6 +8,7 @@ use crate::error::{InstallError, Result};
 use crate::model::{PackageManager, Platform};
 use crate::packages::PackagePlan;
 use crate::registry::{self, ModuleSpec};
+use zeroize::Zeroizing;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TerminalKey {
@@ -17,6 +18,7 @@ pub enum TerminalKey {
     Right,
     Space,
     Enter,
+    Backspace,
     Escape,
     Char(char),
 }
@@ -57,6 +59,10 @@ pub trait TerminalIo {
             Ok(Some(value.trim_end_matches(['\r', '\n']).to_owned()))
         }
     }
+    fn read_secret(&mut self, prompt: &str) -> Result<Option<Zeroizing<String>>> {
+        self.read_line(prompt)
+            .map(|value| value.map(Zeroizing::new))
+    }
     fn clear(&mut self) -> Result<()>;
     fn write_line(&mut self, line: &str) -> Result<()>;
 }
@@ -85,6 +91,36 @@ impl TerminalIo for CrosstermTerminal<'_> {
         Ok(RawModeGuard { active: true })
     }
 
+    fn read_secret(&mut self, prompt: &str) -> Result<Option<Zeroizing<String>>> {
+        self.output
+            .write_all(prompt.as_bytes())
+            .map_err(InstallError::Io)?;
+        self.output.flush().map_err(InstallError::Io)?;
+        let _raw_mode = self.enter_raw_mode()?;
+        let mut value = String::new();
+        loop {
+            let event = event::read().map_err(InstallError::Io)?;
+            let Event::Key(key) = event else {
+                continue;
+            };
+            if key.kind != KeyEventKind::Press {
+                continue;
+            }
+            match key.code {
+                KeyCode::Enter => break,
+                KeyCode::Esc => return Ok(None),
+                KeyCode::Backspace => {
+                    value.pop();
+                }
+                KeyCode::Char(character) => value.push(character),
+                _ => {}
+            }
+        }
+        self.output.write_all(b"\n").map_err(InstallError::Io)?;
+        self.output.flush().map_err(InstallError::Io)?;
+        Ok(Some(Zeroizing::new(value)))
+    }
+
     fn read_key(&mut self) -> Result<TerminalKey> {
         loop {
             let event = event::read().map_err(InstallError::Io)?;
@@ -100,6 +136,7 @@ impl TerminalIo for CrosstermTerminal<'_> {
                 KeyCode::Left => TerminalKey::Left,
                 KeyCode::Right => TerminalKey::Right,
                 KeyCode::Enter => TerminalKey::Enter,
+                KeyCode::Backspace => TerminalKey::Backspace,
                 KeyCode::Esc => TerminalKey::Escape,
                 KeyCode::Char(' ') => TerminalKey::Space,
                 KeyCode::Char(value) => TerminalKey::Char(value),
@@ -147,6 +184,7 @@ impl Cli {
             yes: self.yes,
             list: self.list,
             platform,
+            allow_module_back: false,
         }))
     }
 }
@@ -157,6 +195,7 @@ pub struct InstallRequest {
     pub yes: bool,
     pub list: bool,
     pub platform: Platform,
+    pub allow_module_back: bool,
 }
 
 impl InstallRequest {
@@ -170,6 +209,21 @@ impl InstallRequest {
             yes,
             list: false,
             platform,
+            allow_module_back: false,
+        }
+    }
+
+    pub fn interactive<I, S>(modules: I, yes: bool, platform: Platform) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self {
+            modules: modules.into_iter().map(Into::into).collect(),
+            yes,
+            list: false,
+            platform,
+            allow_module_back: true,
         }
     }
 }
@@ -259,7 +313,7 @@ pub fn select_modules(
             TerminalKey::Escape | TerminalKey::Char('q') | TerminalKey::Char('Q') => {
                 return Err(InstallError::Cancelled)
             }
-            TerminalKey::Left | TerminalKey::Right => {}
+            TerminalKey::Left | TerminalKey::Right | TerminalKey::Backspace => {}
             TerminalKey::Char(_) => {}
         }
     }
@@ -332,7 +386,7 @@ pub fn select_packages(
             TerminalKey::Escape | TerminalKey::Char('q') | TerminalKey::Char('Q') => {
                 return Ok(PackageSelection::Cancel)
             }
-            TerminalKey::Char(_) => {}
+            TerminalKey::Backspace | TerminalKey::Char(_) => {}
         }
     }
 }

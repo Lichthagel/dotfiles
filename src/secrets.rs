@@ -71,8 +71,7 @@ impl<'a> TerminalIdentityPrompt<'a> {
 impl IdentityPrompt for TerminalIdentityPrompt<'_> {
     fn prompt_identity(&mut self) -> Result<Option<Zeroizing<String>>> {
         self.terminal
-            .read_line("Age identity file path or key (default not found): ")
-            .map(|value| value.map(Zeroizing::new))
+            .read_secret("Age identity file path or key (default not found): ")
     }
 }
 
@@ -147,7 +146,7 @@ pub fn resolve_identity(
                     ))),
                 };
             };
-            let value = Zeroizing::new(value.trim().to_owned());
+            let value = trim_secret(&value);
             let prompted_source = if value.starts_with("AGE-SECRET-KEY-") {
                 IdentitySource::Direct(value)
             } else {
@@ -215,6 +214,12 @@ pub fn decrypt_bundle_with_prompt(
     Ok(Some(SecretScope { values }))
 }
 
+fn trim_secret(value: &Zeroizing<String>) -> Zeroizing<String> {
+    let mut trimmed = Zeroizing::new(String::with_capacity(value.trim().len()));
+    trimmed.push_str(value.trim());
+    trimmed
+}
+
 fn parse_identities(contents: &str) -> Result<Vec<x25519::Identity>> {
     let mut identities = Vec::new();
     for line in contents.lines() {
@@ -252,6 +257,22 @@ impl SecretValues {
                 .insert(key.clone(), Zeroizing::new(value.into()))
                 .is_some()
             {
+                return Err(InstallError::Secret(format!(
+                    "duplicate secret name: {key}"
+                )));
+            }
+        }
+        Ok(Self { values })
+    }
+
+    fn from_zeroizing_pairs<I>(pairs: I) -> Result<Self>
+    where
+        I: IntoIterator<Item = (String, Zeroizing<String>)>,
+    {
+        let mut values = BTreeMap::new();
+        for (key, value) in pairs {
+            validate_name(&key)?;
+            if values.insert(key.clone(), value).is_some() {
                 return Err(InstallError::Secret(format!(
                     "duplicate secret name: {key}"
                 )));
@@ -329,9 +350,11 @@ fn parse_secret_values(plaintext: &[u8]) -> Result<SecretValues> {
         };
         let key = key.trim();
         validate_name(key)?;
-        pairs.push((key.to_owned(), value.to_owned()));
+        let mut secret_value = Zeroizing::new(String::with_capacity(value.len()));
+        secret_value.push_str(value);
+        pairs.push((key.to_owned(), secret_value));
     }
-    SecretValues::from_pairs(pairs)
+    SecretValues::from_zeroizing_pairs(pairs)
 }
 
 fn validate_name(name: &str) -> Result<()> {

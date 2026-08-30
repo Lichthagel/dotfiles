@@ -1,10 +1,14 @@
 mod support;
 
 use std::fs;
+use std::sync::{Mutex, OnceLock};
 
-use dotfiles::cli::InstallRequest;
-use dotfiles::engine::{install, install_with_registry, resolve_modules};
+use dotfiles::cli::{InstallRequest, TerminalIo, TerminalKey};
+use dotfiles::engine::{
+    install, install_with_registry, resolve_modules, InstallContext, InstallOutcome,
+};
 use dotfiles::engine::{ordered_phases, resolve_modules_from_registry};
+use dotfiles::error::Result;
 use dotfiles::model::{PackageManager, Platform, SetupKind};
 use dotfiles::registry::{MappingSpec, ModuleSpec, PackageSpec};
 use dotfiles::run;
@@ -47,6 +51,31 @@ static TEST_CONSUMER: ModuleSpec = ModuleSpec {
     secret_bundle: None,
 };
 static TEST_MODULES: &[ModuleSpec] = &[TEST_PROVIDER, TEST_CONSUMER];
+
+fn environment_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+}
+
+struct BackTerminal;
+
+impl TerminalIo for BackTerminal {
+    fn is_interactive(&self) -> bool {
+        true
+    }
+
+    fn read_key(&mut self) -> Result<TerminalKey> {
+        Ok(TerminalKey::Char('b'))
+    }
+
+    fn clear(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn write_line(&mut self, _line: &str) -> Result<()> {
+        Ok(())
+    }
+}
 
 #[test]
 fn git_installs_before_mapping() {
@@ -242,7 +271,59 @@ fn synthetic_dependency_cycles_are_rejected() {
 }
 
 #[test]
+fn package_selector_back_returns_to_module_selection_before_side_effects() {
+    let runner = FakeRunner::available(["apt", "dpkg-query", "run0", "apt-get"]);
+    let fixture = InstallFixture::new(Platform::Linux);
+    let mut terminal = BackTerminal;
+    let request = InstallRequest::interactive(["git"], false, Platform::Linux);
+    let outcome = install(
+        request,
+        InstallContext {
+            platform: &fixture.ops,
+            runner: &runner,
+            http: &fixture.http,
+            terminal: &mut terminal,
+            timestamp: &fixture.timestamp,
+        },
+    )
+    .unwrap();
+    assert_eq!(outcome, InstallOutcome::BackToModuleSelection);
+    assert!(runner.package_log().is_empty());
+    assert!(!fixture.target(".gitconfig").exists());
+}
+
+#[test]
+fn logged_in_atuin_skips_required_secret_decryption() {
+    let _lock = environment_lock();
+    let old_identity = std::env::var_os("AGE_IDENTITY");
+    let old_identities = std::env::var_os("AGE_IDENTITIES");
+    std::env::set_var("AGE_IDENTITY", "not-an-age-identity");
+    std::env::remove_var("AGE_IDENTITIES");
+
+    let runner = FakeRunner::atuin_logged_in();
+    for program in ["apt", "dpkg-query", "run0", "apt-get"] {
+        runner.add_available(program);
+    }
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    let result = install(
+        InstallRequest::explicit(["atuin"], true, Platform::Linux),
+        test_context(&mut fixture, &runner),
+    );
+
+    match old_identity {
+        Some(value) => std::env::set_var("AGE_IDENTITY", value),
+        None => std::env::remove_var("AGE_IDENTITY"),
+    }
+    match old_identities {
+        Some(value) => std::env::set_var("AGE_IDENTITIES", value),
+        None => std::env::remove_var("AGE_IDENTITIES"),
+    }
+    result.unwrap();
+}
+
+#[test]
 fn optional_opencode_secrets_leave_provider_configuration_unchanged() {
+    let _lock = environment_lock();
     let runner = FakeRunner::available(["brew"]);
     let mut fixture = InstallFixture::new(Platform::Linux);
     let previous_identity = std::env::var_os("AGE_IDENTITIES");

@@ -54,6 +54,10 @@ fi
 printf 'verified dotfiles-linux-x86_64\n'
 chmod +x "$binary"
 
-"$binary" "$@"
+if [ -t 1 ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+    "$binary" "$@" </dev/tty
+else
+    "$binary" "$@"
+fi
 status=$?
 exit "$status"

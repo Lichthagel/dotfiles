@@ -25,7 +25,16 @@ impl HttpClient for TestHttp {
     }
 }
 
-pub struct TestTerminal;
+#[derive(Default)]
+pub struct TestTerminal {
+    lines: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl TestTerminal {
+    pub fn lines(&self) -> Vec<String> {
+        self.lines.lock().unwrap().clone()
+    }
+}
 
 impl TerminalIo for TestTerminal {
     fn is_interactive(&self) -> bool {
@@ -40,7 +49,8 @@ impl TerminalIo for TestTerminal {
         Ok(())
     }
 
-    fn write_line(&mut self, _line: &str) -> Result<()> {
+    fn write_line(&mut self, line: &str) -> Result<()> {
+        self.lines.lock().unwrap().push(line.to_owned());
         Ok(())
     }
 }
@@ -70,7 +80,7 @@ impl InstallFixture {
             temp,
             ops,
             http: TestHttp,
-            terminal: TestTerminal,
+            terminal: TestTerminal::default(),
             timestamp: FixedTimestamp,
         }
     }

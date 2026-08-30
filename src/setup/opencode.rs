@@ -8,7 +8,9 @@ use crate::error::{InstallError, Result};
 use crate::model::Platform;
 use crate::platform::PlatformOps;
 use crate::secrets::SecretValues;
+use zeroize::Zeroizing;
 
+use super::http::MAX_THEME_FILE_BYTES;
 use super::jsonc::JsoncDocument;
 use super::SetupContext;
 
@@ -22,6 +24,8 @@ const REQUIRED_PROVIDER_SECRETS: [&str; 4] = [
 const THEME_API_URL: &str =
     "https://api.github.com/repos/catppuccin/opencode/git/trees/main?recursive=1";
 const THEME_RAW_URL: &str = "https://raw.githubusercontent.com/catppuccin/opencode/main";
+const MAX_THEME_FILES: usize = 256;
+const MAX_THEME_TOTAL_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ThemeFile {
@@ -81,12 +85,10 @@ pub fn configure_opencode(context: &SetupContext<'_>) -> Result<()> {
             ("digitalocean-access-token", "DIGITALOCEAN_ACCESS_TOKEN"),
         ];
         for (filename, secret_name) in credentials {
-            let path = stage_dir.path().join(filename);
-            fs::write(
-                &path,
-                values.get(secret_name).expect("validated provider secret"),
-            )?;
-            staged_credentials.push((filename, fs::read(path)?));
+            let value = values.get(secret_name).expect("validated provider secret");
+            let mut bytes = Zeroizing::new(Vec::with_capacity(value.len()));
+            bytes.extend_from_slice(value.as_bytes());
+            staged_credentials.push((filename, bytes));
         }
     }
 
@@ -206,8 +208,15 @@ pub fn fetch_themes(context: &SetupContext<'_>, api_url: &str, raw_url: &str) ->
         .get("tree")
         .and_then(Value::as_array)
         .ok_or_else(|| InstallError::Setup("Catppuccin theme response has no tree".into()))?;
+    if entries.len() > MAX_THEME_FILES * 4 {
+        return Err(InstallError::Setup(format!(
+            "Catppuccin theme tree contains too many entries: {}",
+            entries.len()
+        )));
+    }
     let mut filenames = BTreeSet::new();
     let mut files = Vec::new();
+    let mut total_bytes = 0usize;
     for entry in entries {
         let Some(path) = entry.get("path").and_then(Value::as_str) else {
             continue;
@@ -229,7 +238,28 @@ pub fn fetch_themes(context: &SetupContext<'_>, api_url: &str, raw_url: &str) ->
             )));
         }
         let url = format!("{}/{}", raw_url.trim_end_matches('/'), path);
+        if files.len() >= MAX_THEME_FILES {
+            return Err(InstallError::Setup(format!(
+                "Catppuccin theme count exceeds {}",
+                MAX_THEME_FILES
+            )));
+        }
         let bytes = context.http.get_bytes(&url)?;
+        if bytes.len() > MAX_THEME_FILE_BYTES {
+            return Err(InstallError::Setup(format!(
+                "Catppuccin theme {path} exceeds the {}-byte limit",
+                MAX_THEME_FILE_BYTES
+            )));
+        }
+        total_bytes = total_bytes
+            .checked_add(bytes.len())
+            .ok_or_else(|| InstallError::Setup("Catppuccin theme byte count overflowed".into()))?;
+        if total_bytes > MAX_THEME_TOTAL_BYTES {
+            return Err(InstallError::Setup(format!(
+                "Catppuccin themes exceed the {}-byte total limit",
+                MAX_THEME_TOTAL_BYTES
+            )));
+        }
         serde_json::from_slice::<Value>(&bytes).map_err(|error| {
             InstallError::Setup(format!("invalid Catppuccin theme {path}: {error}"))
         })?;

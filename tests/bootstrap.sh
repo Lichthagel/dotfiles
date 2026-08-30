@@ -26,6 +26,11 @@ cat > "$release/dotfiles-linux-x86_64" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" > "${BOOTSTRAP_RECORD:?}"
 printf '%s\n' "$0" >> "${BOOTSTRAP_RECORD:?}"
+if [ -t 0 ]; then
+    printf 'tty\n' >> "${BOOTSTRAP_RECORD:?}"
+else
+    printf 'notty\n' >> "${BOOTSTRAP_RECORD:?}"
+fi
 exit 7
 EOF
 chmod +x "$release/dotfiles-linux-x86_64"
@@ -70,6 +75,13 @@ assert_contains "$(cat "$record" 2>/dev/null || true)" '--modules git --yes'
 recorded_binary="$(sed -n '2p' "$record" 2>/dev/null || true)"
 assert_file_not_exists "$recorded_binary"
 assert_contains "$output" 'verified'
+
+if command -v script >/dev/null 2>&1; then
+    pty_record="$fixture/pty-record"
+    pty_output="$(script -qec "env PATH='$fixture/bin:$PATH' DOTFILES_REPO_URL='file://$fixture/repo' DOTFILES_VERSION=v1 BOOTSTRAP_RECORD='$pty_record' sh '$ROOT/bootstrap/install.sh'" /dev/null 2>&1)"
+    assert_contains "$(cat "$pty_record" 2>/dev/null || true)" 'tty'
+    assert_contains "$pty_output" 'verified'
+fi
 
 printf 'not-a-valid-checksum  dotfiles-linux-x86_64\n' > "$release/dotfiles-linux-x86_64.sha256"
 rm -f "$record"

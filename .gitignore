@@ -3,6 +3,8 @@
 .worktrees/
 target/
 secrets/*.env
+/atuin.env
+/opencode.env
 
 # Editor and operating-system noise
 .DS_Store

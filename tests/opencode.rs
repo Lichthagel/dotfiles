@@ -4,6 +4,7 @@ use std::fs;
 
 use dotfiles::error::InstallError;
 use dotfiles::model::Platform;
+use dotfiles::setup::http::MAX_THEME_FILE_BYTES;
 use dotfiles::setup::opencode::{configure_opencode, SUPERPOWERS_PLUGIN};
 use support::opencode::{config_path_is_private, OpenCodeFixture};
 
@@ -178,4 +179,18 @@ fn failed_theme_download_does_not_replace_config_credentials_or_themes() {
     let before = fixture.snapshot_managed_outputs();
     assert!(configure_opencode(&fixture.context()).is_err());
     assert_eq!(fixture.snapshot_managed_outputs(), before);
+}
+
+#[test]
+fn theme_count_and_file_size_limits_fail_before_replacement() {
+    let count_fixture = OpenCodeFixture::with_http(support::opencode::FakeHttp::too_many_themes());
+    let count_before = count_fixture.snapshot_managed_outputs();
+    assert!(configure_opencode(&count_fixture.context()).is_err());
+    assert_eq!(count_fixture.snapshot_managed_outputs(), count_before);
+
+    let size_fixture = OpenCodeFixture::with_http(support::opencode::FakeHttp::oversized_theme());
+    let size_before = size_fixture.snapshot_managed_outputs();
+    assert!(configure_opencode(&size_fixture.context()).is_err());
+    assert_eq!(size_fixture.snapshot_managed_outputs(), size_before);
+    assert!(MAX_THEME_FILE_BYTES > 0);
 }

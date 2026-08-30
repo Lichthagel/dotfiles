@@ -75,6 +75,22 @@ impl FakeRunner {
         self.available.lock().unwrap().insert(program.to_owned());
     }
 
+    pub fn apt_without_mise_then_mise_after_install() -> Self {
+        Self::available(["apt", "dpkg-query", "run0", "apt-get"])
+    }
+
+    pub fn apt_install_failure() -> Self {
+        Self::apt_without_mise_then_mise_after_install().failing_program("run0")
+    }
+
+    pub fn package_log(&self) -> Vec<String> {
+        self.calls()
+            .into_iter()
+            .filter(|call| call.program == "run0" || call.program == "sudo")
+            .filter_map(|call| call.args.get(3).cloned())
+            .collect()
+    }
+
     pub fn calls(&self) -> Vec<Invocation> {
         self.calls.lock().unwrap().clone()
     }

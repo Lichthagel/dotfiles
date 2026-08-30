@@ -8,7 +8,7 @@ use crate::error::Result;
 use crate::model::SetupKind;
 use crate::packages::CommandRunner;
 use crate::platform::PlatformOps;
-use crate::secrets::SecretValues;
+use crate::secrets::{SecretMode, SecretValues};
 
 pub use http::HttpClient;
 
@@ -17,6 +17,14 @@ pub struct SetupContext<'a> {
     pub runner: &'a dyn CommandRunner,
     pub http: &'a dyn HttpClient,
     pub secrets: Option<&'a SecretValues>,
+}
+
+pub fn secret_mode(kind: SetupKind) -> Option<SecretMode> {
+    match kind {
+        SetupKind::Atuin => Some(SecretMode::Required),
+        SetupKind::OpenCode => Some(SecretMode::Optional),
+        SetupKind::None | SetupKind::Homebrew | SetupKind::Scoop => None,
+    }
 }
 
 pub fn run_setup(kind: SetupKind, context: &SetupContext<'_>) -> Result<()> {

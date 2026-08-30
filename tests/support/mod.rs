@@ -1,4 +1,6 @@
 #[allow(dead_code)]
+pub mod installer;
+#[allow(dead_code)]
 pub mod mappings;
 #[allow(dead_code)]
 pub mod opencode;

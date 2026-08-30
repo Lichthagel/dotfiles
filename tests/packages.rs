@@ -1,7 +1,9 @@
 mod support;
 
 use dotfiles::model::{PackageManager, Platform};
-use dotfiles::packages::{build_package_plan, install_package, CommandRunner, PackageAction};
+use dotfiles::packages::{
+    build_package_plan, install_package, CommandRunner, PackageAction, SystemCommandRunner,
+};
 use dotfiles::registry::find_module;
 use support::runner::FakeRunner;
 
@@ -168,6 +170,43 @@ fn unsupported_manager_returns_an_error() {
     )
     .unwrap_err();
     assert!(error.to_string().contains("not supported"));
+}
+
+#[cfg(windows)]
+#[test]
+fn system_runner_invokes_cmd_scripts_for_scoop() {
+    use std::sync::{Mutex, OnceLock};
+
+    static PATH_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let _guard = PATH_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let fixture = tempfile::tempdir().unwrap();
+    let log = fixture.path().join("scoop.log");
+    let script = fixture.path().join("scoop.cmd");
+    std::fs::write(
+        &script,
+        format!("@echo off\r\necho %*>{}\r\n", log.to_string_lossy()),
+    )
+    .unwrap();
+    let old_path = std::env::var_os("PATH");
+    let mut paths = vec![fixture.path().to_path_buf()];
+    if let Some(old_path) = &old_path {
+        paths.extend(std::env::split_paths(old_path));
+    }
+    std::env::set_var("PATH", std::env::join_paths(paths).unwrap());
+
+    let result = install_package(
+        &SystemCommandRunner,
+        Platform::Windows,
+        &action(PackageManager::Scoop, "pkg"),
+    );
+
+    if let Some(old_path) = old_path {
+        std::env::set_var("PATH", old_path);
+    } else {
+        std::env::remove_var("PATH");
+    }
+    result.unwrap();
+    assert_eq!(std::fs::read_to_string(log).unwrap().trim(), "install pkg");
 }
 
 #[cfg(unix)]

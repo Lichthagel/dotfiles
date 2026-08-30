@@ -46,6 +46,15 @@ impl CommandRunner for SystemCommandRunner {
         environment: &[(String, String)],
         stdin: Option<&[u8]>,
     ) -> Result<CommandOutput> {
+        #[cfg(windows)]
+        let mut command = if program == "scoop" {
+            let mut command = Command::new("cmd.exe");
+            command.arg("/D").arg("/C").arg(program);
+            command
+        } else {
+            Command::new(program)
+        };
+        #[cfg(not(windows))]
         let mut command = Command::new(program);
         command.args(args).envs(environment.iter().cloned());
         if stdin.is_some() {

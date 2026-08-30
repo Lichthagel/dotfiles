@@ -29,7 +29,7 @@ printf '%s\n' "$0" >> "${BOOTSTRAP_RECORD:?}"
 exit 7
 EOF
 chmod +x "$release/dotfiles-linux-x86_64"
-sha256sum "$release/dotfiles-linux-x86_64" | sed 's#  .*#  dotfiles-linux-x86_64#' > "$release/dotfiles-linux-x86_64.sha256"
+sha256sum "$release/dotfiles-linux-x86_64" | tr '[:lower:]' '[:upper:]' | sed 's#  .*#  dotfiles-linux-x86_64#' > "$release/dotfiles-linux-x86_64.sha256"
 
 cat > "$fixture/bin/curl" <<'EOF'
 #!/usr/bin/env bash

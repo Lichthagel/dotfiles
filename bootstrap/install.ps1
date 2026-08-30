@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-if (-not [Environment]::Is64BitOperatingSystem -or
+if ([Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT -or
+    -not [Environment]::Is64BitOperatingSystem -or
     [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne [System.Runtime.InteropServices.Architecture]::X64) {
     throw 'This bootstrap supports Windows x86_64 only.'
 }

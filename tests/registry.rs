@@ -134,10 +134,18 @@ fn package_alternatives_are_preserved_without_jq_or_age() {
     }
 
     let mise = registry::find_module("mise").unwrap();
-    assert!(mise
-        .packages
-        .iter()
-        .any(|package| package.manager == PackageManager::Winget && package.name == "jdx.mise"));
+    for (manager, name) in [
+        (PackageManager::Apt, "mise"),
+        (PackageManager::Dnf, "mise"),
+        (PackageManager::Pacman, "mise"),
+        (PackageManager::Brew, "mise"),
+        (PackageManager::Winget, "jdx.mise"),
+        (PackageManager::Scoop, "mise"),
+    ] {
+        assert!(mise.packages.iter().any(|package| {
+            package.manager == manager && package.name == name && package.logical == "mise"
+        }));
+    }
 
     let opencode = registry::find_module("opencode").unwrap();
     assert!(opencode.packages.iter().any(|package| {
@@ -192,13 +200,13 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
     assert!(mise.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Linux
             && mapping.asset == AssetId::MiseBash
-            && mapping.target == Target::ProfileSibling("10-mise.bash")
+            && mapping.target == Target::Home(".config/bashrc.d/10-mise.bash")
             && mapping.requires == ["bash"]
     }));
     assert!(mise.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Windows
             && mapping.asset == AssetId::MisePowerShell
-            && mapping.target == Target::ProfileSibling("10-mise.ps1")
+            && mapping.target == Target::ProfileSibling("Profile.d/10-mise.ps1")
             && mapping.requires == ["powershell"]
     }));
 
@@ -206,14 +214,54 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
     assert!(brew.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Linux
             && mapping.asset == AssetId::BrewBash
-            && mapping.target == Target::ProfileSibling("05-brew.bash")
+            && mapping.target == Target::Home(".config/bashrc.d/05-brew.bash")
             && mapping.requires == ["bash"]
     }));
     let scoop = registry::find_module("scoop").unwrap();
     assert!(scoop.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Windows
             && mapping.asset == AssetId::ScoopPowerShell
-            && mapping.target == Target::ProfileSibling("05-scoop.ps1")
+            && mapping.target == Target::ProfileSibling("Profile.d/05-scoop.ps1")
+            && mapping.requires == ["powershell"]
+    }));
+
+    let atuin = registry::find_module("atuin").unwrap();
+    assert!(atuin.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset == AssetId::AtuinBash
+            && mapping.target == Target::Home(".config/bashrc.d/50-atuin.bash")
+            && mapping.requires == ["bash"]
+    }));
+    assert!(atuin.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Windows
+            && mapping.asset == AssetId::AtuinPowerShell
+            && mapping.target == Target::ProfileSibling("Profile.d/50-atuin.ps1")
+            && mapping.requires == ["powershell"]
+    }));
+
+    let oh_my_posh = registry::find_module("oh-my-posh").unwrap();
+    assert!(oh_my_posh.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset == AssetId::OhMyPoshConfig
+            && mapping.target == Target::Home(".config/oh-my-posh/config.json")
+            && mapping.requires.is_empty()
+    }));
+    assert!(oh_my_posh.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset == AssetId::OhMyPoshBash
+            && mapping.target == Target::Home(".config/bashrc.d/10-oh-my-posh.bash")
+            && mapping.requires == ["bash"]
+    }));
+    assert!(oh_my_posh.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Windows
+            && mapping.asset == AssetId::OhMyPoshConfig
+            && mapping.target == Target::ProfileSibling("oh-my-posh.config.json")
+            && mapping.requires.is_empty()
+    }));
+    assert!(oh_my_posh.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Windows
+            && mapping.asset == AssetId::OhMyPoshPowerShell
+            && mapping.target == Target::ProfileSibling("Profile.d/10-oh-my-posh.ps1")
             && mapping.requires == ["powershell"]
     }));
 }

@@ -249,13 +249,13 @@ const MISE_MAPPINGS: &[MappingSpec] = &[
     MappingSpec {
         platform: Platform::Linux,
         asset: AssetId::MiseBash,
-        target: Target::ProfileSibling("10-mise.bash"),
+        target: Target::Home(".config/bashrc.d/10-mise.bash"),
         requires: REQUIRES_BASH,
     },
     MappingSpec {
         platform: Platform::Windows,
         asset: AssetId::MisePowerShell,
-        target: Target::ProfileSibling("10-mise.ps1"),
+        target: Target::ProfileSibling("Profile.d/10-mise.ps1"),
         requires: REQUIRES_POWERSHELL,
     },
 ];
@@ -263,14 +263,14 @@ const MISE_MAPPINGS: &[MappingSpec] = &[
 const BREW_MAPPINGS: &[MappingSpec] = &[MappingSpec {
     platform: Platform::Linux,
     asset: AssetId::BrewBash,
-    target: Target::ProfileSibling("05-brew.bash"),
+    target: Target::Home(".config/bashrc.d/05-brew.bash"),
     requires: REQUIRES_BASH,
 }];
 
 const SCOOP_MAPPINGS: &[MappingSpec] = &[MappingSpec {
     platform: Platform::Windows,
     asset: AssetId::ScoopPowerShell,
-    target: Target::ProfileSibling("05-scoop.ps1"),
+    target: Target::ProfileSibling("Profile.d/05-scoop.ps1"),
     requires: REQUIRES_POWERSHELL,
 }];
 
@@ -278,13 +278,13 @@ const ATUIN_MAPPINGS: &[MappingSpec] = &[
     MappingSpec {
         platform: Platform::Linux,
         asset: AssetId::AtuinBash,
-        target: Target::ProfileSibling("50-atuin.bash"),
+        target: Target::Home(".config/bashrc.d/50-atuin.bash"),
         requires: REQUIRES_BASH,
     },
     MappingSpec {
         platform: Platform::Windows,
         asset: AssetId::AtuinPowerShell,
-        target: Target::ProfileSibling("50-atuin.ps1"),
+        target: Target::ProfileSibling("Profile.d/50-atuin.ps1"),
         requires: REQUIRES_POWERSHELL,
     },
 ];
@@ -299,7 +299,7 @@ const OH_MY_POSH_MAPPINGS: &[MappingSpec] = &[
     MappingSpec {
         platform: Platform::Linux,
         asset: AssetId::OhMyPoshBash,
-        target: Target::ProfileSibling("10-oh-my-posh.bash"),
+        target: Target::Home(".config/bashrc.d/10-oh-my-posh.bash"),
         requires: REQUIRES_BASH,
     },
     MappingSpec {
@@ -311,7 +311,7 @@ const OH_MY_POSH_MAPPINGS: &[MappingSpec] = &[
     MappingSpec {
         platform: Platform::Windows,
         asset: AssetId::OhMyPoshPowerShell,
-        target: Target::ProfileSibling("10-oh-my-posh.ps1"),
+        target: Target::ProfileSibling("Profile.d/10-oh-my-posh.ps1"),
         requires: REQUIRES_POWERSHELL,
     },
 ];

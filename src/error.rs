@@ -42,6 +42,10 @@ impl ExitCategory {
 }
 
 impl InstallError {
+    pub fn secret(message: impl Into<String>) -> Self {
+        Self::Secret(message.into())
+    }
+
     pub const fn exit_category(&self) -> ExitCategory {
         match self {
             Self::Usage(_) => ExitCategory::Usage,

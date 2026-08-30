@@ -2,6 +2,8 @@
 pub mod mappings;
 #[allow(dead_code)]
 pub mod runner;
+#[allow(dead_code)]
+pub mod secrets;
 
 #[allow(dead_code)]
 pub mod assertions {

@@ -6,6 +6,7 @@ pub mod model;
 pub mod packages;
 pub mod platform;
 pub mod registry;
+pub mod secrets;
 
 use std::ffi::OsString;
 use std::io::Write;

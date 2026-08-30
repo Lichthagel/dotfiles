@@ -68,3 +68,7 @@ pub fn from_environment() -> Result<UnixPlatform> {
 pub fn default_profile_path(home: &Path) -> PathBuf {
     super::current_profile(home)
 }
+
+pub fn default_identity_path(home: &Path) -> PathBuf {
+    home.join(".config").join("age").join("keys.txt")
+}

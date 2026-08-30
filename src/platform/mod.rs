@@ -372,6 +372,26 @@ pub(crate) fn current_backup_root(home: &Path) -> PathBuf {
     }
 }
 
+pub fn default_identity_path() -> Result<PathBuf> {
+    let home = current_home()?;
+    Ok(default_identity_path_for_home(&home))
+}
+
+fn default_identity_path_for_home(home: &Path) -> PathBuf {
+    #[cfg(unix)]
+    {
+        unix::default_identity_path(home)
+    }
+    #[cfg(windows)]
+    {
+        windows::default_identity_path(home)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        home.join(".config").join("age").join("keys.txt")
+    }
+}
+
 pub(crate) fn current_profile(home: &Path) -> PathBuf {
     #[cfg(windows)]
     {

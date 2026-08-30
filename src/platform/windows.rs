@@ -70,3 +70,11 @@ pub fn from_environment() -> Result<WindowsPlatform> {
 pub fn default_profile_path(home: &Path) -> PathBuf {
     super::current_profile(home)
 }
+
+pub fn default_identity_path(home: &Path) -> PathBuf {
+    std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join("AppData").join("Roaming"))
+        .join("age")
+        .join("keys.txt")
+}

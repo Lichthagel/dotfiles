@@ -2,6 +2,7 @@ use std::io::{self, IsTerminal, Write};
 
 use clap::Parser;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 
 use crate::error::{InstallError, Result};
 use crate::model::{PackageManager, Platform};
@@ -20,8 +21,29 @@ pub enum TerminalKey {
     Char(char),
 }
 
+pub struct RawModeGuard {
+    active: bool,
+}
+
+impl RawModeGuard {
+    fn inactive() -> Self {
+        Self { active: false }
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        if self.active {
+            let _ = disable_raw_mode();
+        }
+    }
+}
+
 pub trait TerminalIo {
     fn is_interactive(&self) -> bool;
+    fn enter_raw_mode(&mut self) -> Result<RawModeGuard> {
+        Ok(RawModeGuard::inactive())
+    }
     fn read_key(&mut self) -> Result<TerminalKey>;
     fn clear(&mut self) -> Result<()>;
     fn write_line(&mut self, line: &str) -> Result<()>;
@@ -44,6 +66,11 @@ impl<'a> CrosstermTerminal<'a> {
 impl TerminalIo for CrosstermTerminal<'_> {
     fn is_interactive(&self) -> bool {
         self.interactive
+    }
+
+    fn enter_raw_mode(&mut self) -> Result<RawModeGuard> {
+        enable_raw_mode().map_err(InstallError::Io)?;
+        Ok(RawModeGuard { active: true })
     }
 
     fn read_key(&mut self) -> Result<TerminalKey> {
@@ -184,6 +211,7 @@ pub fn select_modules(
     terminal: &mut dyn TerminalIo,
 ) -> Result<Vec<String>> {
     require_interactive(terminal)?;
+    let _raw_mode = terminal.enter_raw_mode()?;
     if modules.is_empty() {
         return Ok(Vec::new());
     }
@@ -243,6 +271,7 @@ pub fn select_packages(
         return Ok(PackageSelection::Continue);
     }
     require_interactive(terminal)?;
+    let _raw_mode = terminal.enter_raw_mode()?;
 
     let mut cursor = 0usize;
     loop {

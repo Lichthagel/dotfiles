@@ -37,11 +37,12 @@ where
     };
 
     let platform = platform_from_cfg();
+    let explicit_request = cli.explicit_request(platform)?;
     if cli.list {
         return print_module_list(platform, io);
     }
 
-    let modules = match cli.explicit_request(platform)? {
+    let modules = match explicit_request {
         Some(request) => request.modules,
         None => {
             let modules = supported_modules(platform);

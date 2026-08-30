@@ -78,6 +78,11 @@ fn invalid_module_lists_return_usage_errors() {
 }
 
 #[test]
+fn missing_modules_value_is_rejected_by_clap() {
+    assert!(Cli::try_parse_from(["dotfiles", "--modules"]).is_err());
+}
+
+#[test]
 fn duplicate_unknown_and_unsupported_modules_are_rejected() {
     let duplicate = parse_modules("git,git").unwrap_err();
     assert!(matches!(duplicate, InstallError::Usage(message) if message.contains("duplicate")));
@@ -196,6 +201,22 @@ fn run_lists_supported_modules_and_empty_selection_is_a_noop() {
         String::from_utf8(output).unwrap(),
         "No applications selected.\n"
     );
+}
+
+#[test]
+fn run_rejects_invalid_explicit_modules_before_listing() {
+    let mut output = Vec::new();
+    let error =
+        dotfiles::run(["dotfiles", "--list", "--modules", "unknown"], &mut output).unwrap_err();
+    assert_eq!(error.exit_category(), ExitCategory::Usage);
+    assert!(output.is_empty());
+}
+
+#[test]
+fn run_redirected_without_modules_requires_a_terminal() {
+    let mut output = Vec::new();
+    let error = dotfiles::run(["dotfiles"], &mut output).unwrap_err();
+    assert!(matches!(error, InstallError::Usage(message) if message.contains("--modules")));
 }
 
 #[test]

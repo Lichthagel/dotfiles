@@ -10,7 +10,7 @@ use dotfiles::secrets::{
     decrypt_bundle, required_values, IdentityPrompt, IdentitySource, SecretMode,
     TerminalIdentityPrompt,
 };
-use support::secrets::EncryptedFixture;
+use support::secrets::{EncryptedFixture, TempRootGuard};
 use zeroize::Zeroizing;
 
 fn environment_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -20,6 +20,8 @@ fn environment_lock() -> std::sync::MutexGuard<'static, ()> {
 
 #[test]
 fn decrypts_embedded_style_age_payload_without_creating_plaintext_files() {
+    let _lock = environment_lock();
+    let temp_root = TempRootGuard::new();
     let fixture = EncryptedFixture::new("ATUIN_USERNAME=test-user\nATUIN_PASSWORD=test-pass\n");
     let scope = decrypt_bundle(
         SecretBundle::Atuin,
@@ -31,7 +33,7 @@ fn decrypts_embedded_style_age_payload_without_creating_plaintext_files() {
     .unwrap();
     assert_eq!(scope.values().get("ATUIN_USERNAME"), Some("test-user"));
     assert_eq!(scope.values().get("ATUIN_PASSWORD"), Some("test-pass"));
-    assert!(fixture.temp_plaintext_files().is_empty());
+    assert!(temp_root.temp_plaintext_files().is_empty());
 }
 
 #[test]
@@ -163,7 +165,9 @@ fn missing_optional_identity_skips_and_required_identity_fails() {
 
 #[test]
 fn malformed_lines_and_invalid_names_are_rejected() {
+    let _lock = environment_lock();
     for plaintext in ["not-an-assignment\n", "bad-name=value\n"] {
+        let temp_root = TempRootGuard::new();
         let fixture = EncryptedFixture::new(plaintext);
         assert!(decrypt_bundle(
             SecretBundle::Atuin,
@@ -172,6 +176,7 @@ fn malformed_lines_and_invalid_names_are_rejected() {
             SecretMode::Required,
         )
         .is_err());
+        assert!(temp_root.temp_plaintext_files().is_empty());
     }
 }
 

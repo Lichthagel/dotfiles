@@ -2,48 +2,64 @@
 
 ## Test Requirements
 
-Run the focused platform test after changing its installer or module declarations. Before opening a change, run the complete local matrix when the tools are available:
+Run the complete local Rust matrix before opening a change:
 
 ```sh
-bash -n install.sh
-bash tests/test-install.sh
-bash tests/test-packages.sh
-bash tests/test-secrets.sh
+cargo fmt --check
+cargo test --locked
+cargo clippy --locked -- -D warnings
+bash -n bootstrap/install.sh
+bash tests/bootstrap.sh
 ```
 
 ```powershell
-pwsh -NoProfile -File .\tests\test-install.ps1
-pwsh -NoProfile -File .\tests\test-packages.ps1
+cargo fmt --check
+cargo test --locked
+cargo clippy --locked -- -D warnings
+pwsh -NoProfile -File .\tests\bootstrap.ps1
 ```
 
-The tests use isolated temporary homes and fake package-manager commands. They do not install packages on the host. Use `--apps`/`-Apps` and `--yes`/`-Yes` for noninteractive installer checks.
+The tests use isolated temporary homes, fake package-manager commands, fake
+HTTP responses, generated age identities, and synthetic credentials. They do
+not install packages or contact external services. Native Windows tests cover
+profile paths and current-user-only credential ACLs; Linux CI covers Linux
+permissions and release compilation.
 
-OpenCode coverage must preserve both platform setup declarations and the
-opt-in behavior. Its setup fetches the latest upstream Catppuccin themes on
-each rerun without adding a default theme, writes provider credentials to
-protected user-local files, and keeps secret values out of `opencode.jsonc`.
-The configured local MCP prerequisite is `uvx duckduckgo-mcp-server`, and the
-Superpowers plugin must continue to use its configured Git URL.
+GitHub Actions runs the Rust tests and Clippy on native Linux and Windows
+runners, exercises both ephemeral bootstraps, and builds release binaries for
+`x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`.
 
-The GitHub Actions workflow also runs ShellCheck for shell files and PSScriptAnalyzer for PowerShell files. Install those tools locally when changing installer logic:
+## Adding a Module
 
-```sh
-shellcheck --severity=error install.sh lib/*.sh modules/**/*.sh tests/*.sh
-```
+Add a typed `ModuleSpec` entry and its package/mapping declarations to
+`src/registry.rs`. Put human-editable static configuration under
+`modules/<name>/` and add an explicit `AssetId` reference in `src/assets.rs`.
+Mappings must use typed platform targets and list shell/profile requirements in
+the registry.
 
-```powershell
-Install-Module PSScriptAnalyzer -Scope CurrentUser
-Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error -EnableExit
-```
+If a module needs setup beyond package installation and asset mapping, add a
+focused Rust handler under `src/setup/` and dispatch it through `SetupKind`.
+Do not add arbitrary Bash or PowerShell setup hooks. Provider setup must use the
+explicit typed adapter boundary and must not evaluate downloaded installer
+scripts.
 
-## Adding A Module
+## Secrets and OpenCode
 
-Add the module manifest and source files first, then add tests for its parser declarations and at least one isolated installation path on each supported platform. Cover package selection, setup ordering, mappings, required modules, and backup behavior where applicable.
+Encrypted bundles belong at `secrets/atuin.env.age` and
+`secrets/opencode.env.age`; they are embedded explicitly into the release
+binary. Rust decrypts them in memory using the age library. Never commit
+plaintext environment files, age private keys, decrypted credential files, or
+real credentials.
 
-Keep test-only fake commands and fixtures under `tests/`; never add plaintext credentials, age keys, or decrypted secret files to the repository.
+Secret tests must generate age identities and use synthetic values. OpenCode
+coverage must preserve optional all-or-none provider behavior, protected
+user-local credential files, JSON/JSONC idempotency, the
+`uvx duckduckgo-mcp-server` MCP entry, the configured Superpowers Git plugin,
+and latest Catppuccin theme fetching with staged failure-safe updates.
 
-For OpenCode secret tests, use synthetic environment values only. The
-encrypted bundle contract is `secrets/opencode.env.age` with
-`OPENROUTER_API_KEY`, `AZURE_API_KEY`, `AZURE_RESOURCE_NAME`, and
-`DIGITALOCEAN_ACCESS_TOKEN`; do not commit that bundle's plaintext source or
-any generated credential files.
+## Release and Bootstrap Changes
+
+The Linux and Windows bootstrap helpers are delivery transport only. They must
+select the correct x86_64 artifact, verify its SHA-256 checksum before running
+it, forward arguments and exit status, and remove temporary files. They must
+not contain module or setup logic.

@@ -1,8 +1,8 @@
 # Dotfiles
 
-Minimal cross-platform dotfiles with a single Rust installer binary. Linux and
-Windows use the same module registry, package planning, native setup handlers,
-secret handling, and embedded configuration assets.
+Minimal cross-platform dotfiles with one Rust installer binary. Linux and
+Windows share the typed module registry, package planning, native setup
+handlers, age secret handling, and embedded configuration assets.
 
 ## Setup
 
@@ -75,6 +75,10 @@ are opt-in. Existing targets are moved into timestamped backup directories
 before replacement. Embedded mappings are installed as regular files, so they
 do not depend on the temporary binary or a source checkout.
 
+Package-manager priority is `apt`, `dnf`, `pacman`, `brew`, `mise` on Linux and
+`winget`, `scoop`, `brew`, `mise` on Windows. Linux system managers prefer
+`run0`, then `sudo`.
+
 ### Oh My Posh
 
 Oh My Posh is an opt-in cross-platform prompt module. Select it interactively
@@ -118,28 +122,9 @@ Never commit a plaintext environment file, age private key, or decrypted
 credential file.
 
 Each setup rerun fetches and validates the latest Catppuccin OpenCode themes
-from upstream. The module does not select or add a default theme. OpenCode also configures the
-local MCP command `uvx duckduckgo-mcp-server`. The Superpowers plugin is
-managed from `superpowers@git+https://github.com/obra/superpowers.git`.
-
-## Legacy checkout compatibility
-
-Checkouts from before the Rust binary migration retain the old entry points for
-that checkout only:
-
-```sh
-./install.sh --apps opencode
-curl -fsSL https://raw.githubusercontent.com/Lichthagel/dotfiles/main/install.sh | sh
-```
-
-```powershell
-.\install.ps1 -Apps opencode
-irm https://raw.githubusercontent.com/Lichthagel/dotfiles/main/install.ps1 | iex
-```
-
-These legacy commands are not used by the current release bootstraps and will
-be removed after migration parity is complete. Never commit the plaintext
-secret environment file.
+from upstream. The module does not select or add a default theme. OpenCode also
+configures the local MCP command `uvx duckduckgo-mcp-server`. The Superpowers
+plugin is managed from `superpowers@git+https://github.com/obra/superpowers.git`.
 
 ## Adding Modules
 

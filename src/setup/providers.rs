@@ -3,7 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::error::{InstallError, Result};
-use crate::model::Platform;
+use crate::model::{PackageManager, Platform};
+use crate::packages::{ManagerAdapter, PackageManagerAdapter};
 use crate::platform::current_scoop_root;
 
 use super::SetupContext;
@@ -20,11 +21,7 @@ pub fn install_homebrew(context: &SetupContext<'_>) -> Result<()> {
     if context.runner.available("brew") {
         return Ok(());
     }
-    if !context.runner.available("git") {
-        return Err(InstallError::Setup(
-            "Homebrew bootstrap requires git".into(),
-        ));
-    }
+    ensure_git(context)?;
 
     let prefix = env::var_os("DOTFILES_HOMEBREW_PREFIX")
         .map(PathBuf::from)
@@ -53,9 +50,7 @@ pub fn install_scoop(context: &SetupContext<'_>) -> Result<()> {
     if context.runner.available("scoop") {
         return Ok(());
     }
-    if !context.runner.available("git") {
-        return Err(InstallError::Setup("Scoop bootstrap requires git".into()));
-    }
+    ensure_git(context)?;
 
     let home = context
         .platform
@@ -128,6 +123,43 @@ fn clone_repository(
         return Err(InstallError::Setup(format!(
             "{provider} git clone failed for {repository}"
         )));
+    }
+    Ok(())
+}
+
+fn ensure_git(context: &SetupContext<'_>) -> Result<()> {
+    if context.runner.available("git") {
+        return Ok(());
+    }
+
+    let platform = context.platform.platform();
+    let manager = PackageManager::priority(platform)
+        .iter()
+        .copied()
+        .find(|manager| PackageManagerAdapter::new(platform, *manager).available(context.runner))
+        .ok_or_else(|| {
+            InstallError::Setup(format!(
+                "provider bootstrap requires git and no supported package manager is available; supported managers: {}",
+                PackageManager::priority(platform)
+                    .iter()
+                    .map(|manager| manager.label())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
+        })?;
+    let adapter = PackageManagerAdapter::new(platform, manager);
+    if !adapter.installed(context.runner, "git")? {
+        adapter.install(context.runner, "git").map_err(|error| {
+            InstallError::Setup(format!("install git for provider bootstrap: {error}"))
+        })?;
+        context.runner.refresh().map_err(|error| {
+            InstallError::Setup(format!("refresh PATH after installing git: {error}"))
+        })?;
+    }
+    if !context.runner.available("git") {
+        return Err(InstallError::Setup(
+            "git installation did not make git discoverable".into(),
+        ));
     }
     Ok(())
 }

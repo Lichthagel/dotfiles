@@ -64,6 +64,9 @@ impl CommandRunner for CloneRunner {
             .lock()
             .unwrap()
             .push((program.to_owned(), args.to_vec()));
+        if program == "run0" && args.iter().any(|arg| arg == "git") {
+            self.available.lock().unwrap().insert("git".into());
+        }
         if program == "git" && args.first().map(String::as_str) == Some("clone") {
             let destination = PathBuf::from(args.last().expect("clone destination"));
             fs::create_dir_all(destination.join("bin")).unwrap();
@@ -142,6 +145,34 @@ fn homebrew_bootstrap_clones_repository_and_updates_path() {
     let paths = std::env::split_paths(&path).collect::<Vec<_>>();
     assert_eq!(paths[0], prefix.join("bin"));
     assert_eq!(paths[1], prefix.join("sbin"));
+
+    restore_env("DOTFILES_HOMEBREW_PREFIX", old_prefix);
+    restore_env("PATH", old_path);
+}
+
+#[test]
+fn homebrew_bootstrap_installs_git_with_an_available_system_manager() {
+    let _guard = ENV_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let prefix_root = tempfile::tempdir().unwrap();
+    let prefix = prefix_root.path().join("linuxbrew");
+    let old_prefix = std::env::var_os("DOTFILES_HOMEBREW_PREFIX");
+    let old_path = std::env::var_os("PATH");
+    std::env::set_var("DOTFILES_HOMEBREW_PREFIX", &prefix);
+    std::env::set_var("PATH", "/usr/bin");
+
+    let runner = CloneRunner::new(&["apt", "dpkg-query", "run0", "apt-get"]);
+    let fixture = MappingFixture::with_platform(Platform::Linux);
+    let http = NoHttp;
+    install_homebrew(&context(&fixture, &runner, &http)).unwrap();
+
+    let calls = runner.calls();
+    assert_eq!(calls[0].0, "dpkg-query");
+    assert_eq!(calls[1].0, "run0");
+    assert!(calls[1].1.iter().any(|arg| arg == "git"));
+    assert_eq!(calls[2].0, "git");
 
     restore_env("DOTFILES_HOMEBREW_PREFIX", old_prefix);
     restore_env("PATH", old_path);

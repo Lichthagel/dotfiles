@@ -203,6 +203,7 @@ resolve_modules() {
                 [ "$entry_module" = "$module" ] || continue
                 IFS='|' read -r logical declaration <<< "$declaration"
                 IFS=':' read -r manager name <<< "$declaration"
+                command_available "$logical" && continue
                 package_available=0
                 for other in "${PACKAGES[@]}"; do
                     IFS='|' read -r other_module other_decl <<< "$other"
@@ -250,6 +251,10 @@ resolve_modules() {
     done
 }
 
+command_available() {
+    type -P "$1" >/dev/null 2>&1
+}
+
 package_installed() {
     case "$1" in
         apt) dpkg-query -W -f='${Status}' "$2" 2>/dev/null | grep -q 'install ok installed' ;;
@@ -285,6 +290,7 @@ package_plan() {
         found=0
         for candidate in "${PLAN_KEYS[@]}"; do [ "$candidate" = "$key" ] && found=1; done
         [ "$found" -eq 1 ] && continue
+        command_available "$logical" && continue
         options=""
         for priority in "${manager_priority[@]}"; do
             manager_valid linux "$priority" && manager_available "$priority" || continue

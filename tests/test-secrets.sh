@@ -28,9 +28,17 @@ for installer in "$ROOT/install.sh" "$ROOT/install.ps1"; do
 done
 
 mkdir -p "$tmp/bin" "$tmp/home/.config/age" "$tmp/state" "$tmp/log"
+# A curated PATH keeps the host's own age out of the fixture, so the secret flow
+# only ever runs the commands this test provides.
+for command in awk bash cat chmod cp cut date dirname env find grep head ln mkdir mktemp mv rm script sort stat tail wc; do
+    command_path="$(type -P "$command" || true)"
+    [ -n "$command_path" ] && ln -s "$command_path" "$tmp/bin/$command"
+done
 printf 'identity\n' > "$tmp/home/.config/age/keys.txt"
 printf 'encrypted fixture\n' > "$tmp/atuin.env.age"
-cat > "$tmp/bin/age" <<'EOF'
+# The age command starts out absent so the secret bundle pulls in the declared
+# dependency; the fake package manager provides it once the plan is installed.
+cat > "$tmp/bin/age-template" <<'EOF'
 #!/usr/bin/env bash
 if [ "${ATUIN_TEST_LOG_IDENTITY:-0}" = 1 ]; then cat "$3" > "$ATUIN_TEST_LOG/identity"; fi
 cat "${@: -1}"
@@ -60,12 +68,13 @@ cat > "$tmp/bin/run0" <<'EOF'
 #!/usr/bin/env bash
 "$@"
 EOF
-cat > "$tmp/bin/apt-get" <<'EOF'
+cat > "$tmp/bin/apt-get" <<EOF
 #!/usr/bin/env bash
-printf '%s\n' "$*" >> "$ATUIN_TEST_LOG/package-installs"
+printf '%s\n' "\$*" >> "\$ATUIN_TEST_LOG/package-installs"
+if [ "\$3" = age ]; then cp "$tmp/bin/age-template" "$tmp/bin/age"; chmod +x "$tmp/bin/age"; fi
 exit 0
 EOF
-chmod +x "$tmp/bin"/*
+chmod +x "$tmp/bin/apt" "$tmp/bin/dpkg-query" "$tmp/bin/sudo" "$tmp/bin/run0" "$tmp/bin/apt-get" "$tmp/bin/atuin"
 
 cat > "$tmp/atuin.env.age" <<'EOF'
 ATUIN_USERNAME=test-user
@@ -73,9 +82,9 @@ ATUIN_PASSWORD=test-password
 ATUIN_KEY=test-key
 EOF
 mkdir -p "$tmp/log"
-PATH="$tmp/bin:$PATH" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" ATUIN_TEST_LOG="$tmp/log" DOTFILES_SECRETS_FILE="$tmp/atuin.env.age" bash "$ROOT/install.sh" --apps atuin --yes >/dev/null || failures=$((failures + 1))
+PATH="$tmp/bin" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state" ATUIN_TEST_LOG="$tmp/log" DOTFILES_SECRETS_FILE="$tmp/atuin.env.age" bash "$ROOT/install.sh" --apps atuin --yes >/dev/null || failures=$((failures + 1))
 
-grep -Fq 'age' "$tmp/log/package-installs" || failures=$((failures + 1))
+grep -Fxq 'install -y age' "$tmp/log/package-installs" || { printf 'FAIL: the age dependency was not installed for a missing command\n' >&2; failures=$((failures + 1)); }
 grep -Fxq 'login -u test-user --password test-password --key test-key' "$tmp/log/args" || failures=$((failures + 1))
 [ ! -s "$tmp/log/stdin" ] || failures=$((failures + 1))
 [ ! -e "$tmp/state/dotfiles/secrets" ] || failures=$((failures + 1))
@@ -86,39 +95,39 @@ printf 'ATUIN_USERNAME=test-user\r\nATUIN_PASSWORD=test-password\r\nATUIN_KEY=te
 mkdir -p "$tmp/crlf-home/.config/age"
 printf 'identity\n' > "$tmp/crlf-home/.config/age/keys.txt"
 rm -f "$tmp/log/args" "$tmp/log/stdin"
-PATH="$tmp/bin:$PATH" HOME="$tmp/crlf-home" XDG_STATE_HOME="$tmp/crlf-state" ATUIN_TEST_LOG="$tmp/log" DOTFILES_SECRETS_FILE="$tmp/atuin-crlf.env.age" bash "$ROOT/install.sh" --apps atuin --yes >/dev/null || failures=$((failures + 1))
+PATH="$tmp/bin" HOME="$tmp/crlf-home" XDG_STATE_HOME="$tmp/crlf-state" ATUIN_TEST_LOG="$tmp/log" DOTFILES_SECRETS_FILE="$tmp/atuin-crlf.env.age" bash "$ROOT/install.sh" --apps atuin --yes >/dev/null || failures=$((failures + 1))
 grep -Fxq 'login -u test-user --password test-password --key test-key' "$tmp/log/args" || failures=$((failures + 1))
 [ ! -s "$tmp/log/stdin" ] || failures=$((failures + 1))
 
 mkdir -p "$tmp/bash-only-home"
-PATH="$tmp/bin:$PATH" HOME="$tmp/bash-only-home" XDG_STATE_HOME="$tmp/bash-only-state" bash "$ROOT/install.sh" --apps bash --yes >/dev/null || failures=$((failures + 1))
+PATH="$tmp/bin" HOME="$tmp/bash-only-home" XDG_STATE_HOME="$tmp/bash-only-state" bash "$ROOT/install.sh" --apps bash --yes >/dev/null || failures=$((failures + 1))
 [ ! -e "$tmp/bash-only-home/.config/bashrc.d/50-atuin.bash" ] || failures=$((failures + 1))
 
 mkdir -p "$tmp/bash-atuin-home"
 mkdir -p "$tmp/bash-atuin-home/.config/age"
 printf 'identity\n' > "$tmp/bash-atuin-home/.config/age/keys.txt"
-PATH="$tmp/bin:$PATH" HOME="$tmp/bash-atuin-home" XDG_STATE_HOME="$tmp/bash-atuin-state" ATUIN_TEST_LOG="$tmp/log" DOTFILES_SECRETS_FILE="$tmp/atuin.env.age" bash "$ROOT/install.sh" --apps bash,atuin --yes >/dev/null || failures=$((failures + 1))
+PATH="$tmp/bin" HOME="$tmp/bash-atuin-home" XDG_STATE_HOME="$tmp/bash-atuin-state" ATUIN_TEST_LOG="$tmp/log" DOTFILES_SECRETS_FILE="$tmp/atuin.env.age" bash "$ROOT/install.sh" --apps bash,atuin --yes >/dev/null || failures=$((failures + 1))
 grep -Fxq 'eval "$(atuin init bash)"' "$tmp/bash-atuin-home/.config/bashrc.d/50-atuin.bash" || failures=$((failures + 1))
 
 rm -f "$tmp/log/args" "$tmp/log/stdin"
-PATH="$tmp/bin:$PATH" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state-logged-in" ATUIN_TEST_LOG="$tmp/log" ATUIN_TEST_LOGGED_IN=1 DOTFILES_SECRETS_FILE="$tmp/atuin.env.age" bash "$ROOT/install.sh" --apps atuin --yes >/dev/null || failures=$((failures + 1))
+PATH="$tmp/bin" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state-logged-in" ATUIN_TEST_LOG="$tmp/log" ATUIN_TEST_LOGGED_IN=1 DOTFILES_SECRETS_FILE="$tmp/atuin.env.age" bash "$ROOT/install.sh" --apps atuin --yes >/dev/null || failures=$((failures + 1))
 [ ! -e "$tmp/log/args" ] || failures=$((failures + 1))
 
 rm -f "$tmp/log/args" "$tmp/log/stdin" "$tmp/log/identity"
-PATH="$tmp/bin:$PATH" HOME="$tmp/no-key-home" XDG_STATE_HOME="$tmp/state-direct" ATUIN_TEST_LOG="$tmp/log" ATUIN_TEST_LOG_IDENTITY=1 AGE_IDENTITY='direct-age-key' DOTFILES_SECRETS_FILE="$tmp/atuin.env.age" bash "$ROOT/install.sh" --apps atuin --yes >/dev/null || failures=$((failures + 1))
+PATH="$tmp/bin" HOME="$tmp/no-key-home" XDG_STATE_HOME="$tmp/state-direct" ATUIN_TEST_LOG="$tmp/log" ATUIN_TEST_LOG_IDENTITY=1 AGE_IDENTITY='direct-age-key' DOTFILES_SECRETS_FILE="$tmp/atuin.env.age" bash "$ROOT/install.sh" --apps atuin --yes >/dev/null || failures=$((failures + 1))
 grep -Fxq 'direct-age-key' "$tmp/log/identity" || failures=$((failures + 1))
 
 printf 'ATUIN_USERNAME=test-user\nATUIN_PASSWORD=test-password\n' > "$tmp/incomplete.env.age"
-if PATH="$tmp/bin:$PATH" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state-missing" ATUIN_TEST_LOG="$tmp/log" DOTFILES_SECRETS_FILE="$tmp/incomplete.env.age" bash "$ROOT/install.sh" --apps atuin --yes >/dev/null 2>&1; then
+if PATH="$tmp/bin" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state-missing" ATUIN_TEST_LOG="$tmp/log" DOTFILES_SECRETS_FILE="$tmp/incomplete.env.age" bash "$ROOT/install.sh" --apps atuin --yes >/dev/null 2>&1; then
     failures=$((failures + 1))
 fi
 
 # A piped one-liner has a non-terminal stdin but still has a controlling TTY.
 # The optional secret flow must prompt on that TTY instead of skipping the bundle.
-if command -v script >/dev/null 2>&1; then
+if [ -x "$tmp/bin/script" ]; then
     mkfifo "$tmp/secret-input"
     printf 'fixture-age-key\n' > "$tmp/secret-input" &
-    secret_prompt_output="$(script -qec "bash -c 'exec 0<\"$tmp/secret-input\"; export HOME=\"$tmp/no-key-home\"; source \"$ROOT/lib/secrets.sh\"; DOTFILES_SECRET_FILE=\"$tmp/atuin.env.age\" DOTFILES_SECRETS_OPTIONAL=1 dotfiles_decrypt_env; printf \"%s\\n\" \"\$ATUIN_USERNAME\"'" /dev/null 2>&1)"
+    secret_prompt_output="$(PATH="$tmp/bin" script -qec "bash -c 'exec 0<\"$tmp/secret-input\"; export HOME=\"$tmp/no-key-home\"; source \"$ROOT/lib/secrets.sh\"; DOTFILES_SECRET_FILE=\"$tmp/atuin.env.age\" DOTFILES_SECRETS_OPTIONAL=1 dotfiles_decrypt_env; printf \"%s\\n\" \"\$ATUIN_USERNAME\"'" /dev/null 2>&1)"
     wait
     printf '%s' "$secret_prompt_output" | grep -Fq 'Age identity file path or key' || failures=$((failures + 1))
     printf '%s' "$secret_prompt_output" | grep -Fq 'test-user' || failures=$((failures + 1))

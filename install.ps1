@@ -77,6 +77,7 @@ foreach ($entry in $manifest) {
 $managerPriority = @('winget', 'scoop', 'brew', 'mise')
 $managerValid = @{ windows = @('winget', 'scoop', 'brew', 'mise') }
 function Test-ManagerAvailable($manager) { return [bool](Get-Command $manager -ErrorAction SilentlyContinue) }
+function Test-CommandAvailable($name) { return [bool](Get-Command $name -CommandType Application -ErrorAction SilentlyContinue) }
 function Get-ProviderModule($manager) {
     $matches = @($modules.Keys | Where-Object { $modules[$_].provides -eq $manager -and $modules[$_].platforms -contains 'windows' })
     if ($matches.Count -gt 1) { throw "Multiple modules provide $manager`: $($matches -join ', ')" }
@@ -97,6 +98,7 @@ function Resolve-ModulePhases($selectedNames) {
                 if (-not $resolved.Contains($required)) { $resolved.Add($required); $inputs += $modules[$required].packages; $changed = $true }
             }
             foreach ($logical in @($inputs.Logical | Sort-Object -Unique)) {
+                if (Test-CommandAvailable $logical) { continue }
                 $options = @($inputs | Where-Object Logical -eq $logical)
                 if (@($options | Where-Object { Test-ManagerAvailable $_.Manager }).Count) { continue }
                 foreach ($option in $options) {
@@ -149,6 +151,7 @@ function Get-PackagePlan($selectedNames) {
         $moduleName = $input.Module
         $logicalNames = @($input.Packages.Logical | Sort-Object -Unique)
         foreach ($logical in $logicalNames) {
+            if (Test-CommandAvailable $logical) { continue }
             $provider = if ($moduleName -ne '__dependency') { $modules[$moduleName].provides } else { $null }
             $options = @($input.Packages | Where-Object { $_.Logical -eq $logical -and $_.Manager -in $managerValid.windows -and $_.Manager -ne $provider -and (Test-ManagerAvailable $_.Manager) })
             if (-not $options.Count) { throw "No supported package manager is available for $logical." }

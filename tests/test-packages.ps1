@@ -88,7 +88,7 @@ try {
     @'
 @echo off
 if "%1"=="list" (
-    if exist "%SCOOP_FIXTURE_BIN%\opencode.cmd" echo     opencode 1.0
+    if exist "%SCOOP_FIXTURE_BIN%\scoop-reports-installed" if exist "%SCOOP_FIXTURE_BIN%\opencode.cmd" echo     opencode 1.0
     exit /b 0
 )
 if "%1"=="install" (
@@ -127,6 +127,7 @@ echo DIGITALOCEAN_ACCESS_TOKEN=test-digitalocean
 
     # An existing OpenCode command must suppress its package install.
     Copy-Item (Join-Path $fixtureBin 'opencode-template.cmd') (Join-Path $fixtureBin 'opencode.cmd')
+    New-Item -ItemType File -Force -Path (Join-Path $fixtureBin 'scoop-reports-installed') | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $env:HOME '.config\opencode') | Out-Null
     '{"plugin":[]}' | Set-Content -LiteralPath (Join-Path $env:HOME '.config\opencode\opencode.jsonc') -Encoding utf8
     Set-Content -LiteralPath $fixtureLog -Value '' -Encoding ascii
@@ -147,6 +148,18 @@ echo DIGITALOCEAN_ACCESS_TOKEN=test-digitalocean
     $setupIndex = [array]::IndexOf($events, 'setup-start')
     $packageIndexes = @($events | ForEach-Object { [array]::IndexOf($events, $_) } | Where-Object { $events[$_] -like 'package-complete:*' })
     if ($setupIndex -lt 0 -or @($packageIndexes | Where-Object { $_ -ge $setupIndex }).Count) { throw 'Setup started before package completion' }
+
+    # A command already in PATH satisfies the package even when scoop reports
+    # nothing installed, and the setup declaration still runs.
+    Copy-Item (Join-Path $fixtureBin 'opencode-template.cmd') (Join-Path $fixtureBin 'opencode.cmd')
+    Remove-Item -LiteralPath (Join-Path $fixtureBin 'scoop-reports-installed')
+    Set-Content -LiteralPath $fixtureLog -Value '' -Encoding ascii
+    New-Item -ItemType Directory -Force -Path (Join-Path $env:HOME '.config\opencode') | Out-Null
+    '{"plugin":[]}' | Set-Content -LiteralPath (Join-Path $env:HOME '.config\opencode\opencode.jsonc') -Encoding utf8
+    & (Join-Path $root 'install.ps1') -Apps opencode -Yes
+    $pathEvents = @(Get-Content -LiteralPath $fixtureLog)
+    if ($pathEvents -contains 'package-start:opencode' -or $pathEvents -contains 'package-complete:opencode') { throw 'A command in PATH triggered package installation' }
+    if ($pathEvents -notcontains 'setup-start') { throw 'The OpenCode setup declaration did not run for a command already in PATH' }
 } finally {
     $env:Path = $oldPath
     foreach ($name in @('SCOOP_FIXTURE_BIN', 'SCOOP_FIXTURE_LOG')) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }

@@ -192,8 +192,38 @@ first=''; second=''
 { IFS= read -r first; IFS= read -r second; } < "$tmp/packages-phase.log"
 [ "$first" = 'install -y mise' ] && [ "$second" = 'install -y git' ] || { printf 'FAIL: provider phase did not precede dependent package phase\n' >&2; failures=$((failures + 1)); }
 
+rm -f "$tmp/bin/mise"
 PATH="$tmp/bin" HOME="$tmp/home" XDG_STATE_HOME="$tmp/state-mise" PACKAGE_LOG="$tmp/packages.log" MISE_BIN="$tmp/bin" bash "$ROOT/install.sh" --apps mise --yes >/dev/null || failures=$((failures + 1))
 grep -Fxq 'install -y mise' "$tmp/packages.log" || { printf 'FAIL: mise module was not installed through apt\n' >&2; failures=$((failures + 1)); }
+
+# A command already in PATH satisfies the package even when the manager reports
+# nothing installed, and the dotfiles are still linked.
+printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/git"
+chmod +x "$tmp/bin/git"
+mkdir -p "$tmp/home-path"
+: > "$tmp/packages-path.log"
+PATH="$tmp/bin" HOME="$tmp/home-path" XDG_STATE_HOME="$tmp/state-path" PACKAGE_LOG="$tmp/packages-path.log" MISE_BIN="$tmp/bin" bash "$ROOT/install.sh" --apps git --yes >/dev/null || failures=$((failures + 1))
+if grep -Fq 'install -y git' "$tmp/packages-path.log"; then
+    printf 'FAIL: a command in PATH still triggered a package install\n' >&2
+    failures=$((failures + 1))
+fi
+[ -L "$tmp/home-path/.gitconfig" ] || { printf 'FAIL: dotfiles were not installed for a command found in PATH\n' >&2; failures=$((failures + 1)); }
+
+# A command in PATH removes the need for any available package manager.
+mkdir -p "$tmp/plain-bin" "$tmp/home-no-manager"
+for command in awk bash cat chmod cp date dirname env find grep head ln mkdir mv rm sort stat wc tail cut; do
+    command_path="$(type -P "$command" || true)"
+    [ -n "$command_path" ] && ln -s "$command_path" "$tmp/plain-bin/$command"
+done
+printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/plain-bin/git"
+chmod +x "$tmp/plain-bin/git"
+if PATH="$tmp/plain-bin" HOME="$tmp/home-no-manager" XDG_STATE_HOME="$tmp/state-no-manager" bash "$ROOT/install.sh" --apps git --yes >/dev/null 2>&1; then
+    [ -L "$tmp/home-no-manager/.gitconfig" ] || { printf 'FAIL: dotfiles were not installed without a package manager\n' >&2; failures=$((failures + 1)); }
+else
+    printf 'FAIL: a command in PATH still required a package manager\n' >&2
+    failures=$((failures + 1))
+fi
+rm -f "$tmp/bin/git"
 
 cat > "$tmp/bin/apt-get" <<'EOF'
 #!/usr/bin/env bash

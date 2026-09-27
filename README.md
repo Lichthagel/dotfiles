@@ -47,6 +47,8 @@ The installers use the published repository URL by default for piped execution. 
 - `--list` / `-List` lists supported modules.
 - `--help` / `-Help` prints usage.
 
+A package is skipped when its command is already in `PATH`, using the logical name from the module declaration, so a tool installed outside the package manager is not reinstalled and needs no available package manager.
+
 ## Testing
 
 The repository has isolated Bash and PowerShell installer, package, and secret tests. Run the full local matrix from a checkout with:

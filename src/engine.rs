@@ -275,10 +275,9 @@ pub fn install_with_registry(
             None
         } else if let (Some(bundle), Some(mode)) = (module.secret_bundle, secret_mode(module.setup))
         {
-            let mut prompt = context
-                .terminal
-                .is_interactive()
-                .then(|| TerminalIdentityPrompt::new(context.terminal));
+            let mut prompt = (module.setup == SetupKind::OpenCode
+                || context.terminal.is_interactive())
+            .then(|| TerminalIdentityPrompt::new(context.terminal));
             decrypt_embedded(
                 bundle,
                 mode,

@@ -340,6 +340,7 @@ fn optional_opencode_secrets_leave_provider_configuration_unchanged() {
         None => std::env::remove_var("AGE_IDENTITIES"),
     }
     result.unwrap();
+    assert_eq!(fixture.terminal.secret_reads(), 1);
     let config = fixture.target(".config/opencode/opencode.json");
     let text = fs::read_to_string(config).unwrap();
     assert!(!text.contains("provider"));

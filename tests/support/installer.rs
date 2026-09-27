@@ -28,11 +28,16 @@ impl HttpClient for TestHttp {
 #[derive(Default)]
 pub struct TestTerminal {
     lines: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    secret_reads: std::sync::Arc<std::sync::Mutex<usize>>,
 }
 
 impl TestTerminal {
     pub fn lines(&self) -> Vec<String> {
         self.lines.lock().unwrap().clone()
+    }
+
+    pub fn secret_reads(&self) -> usize {
+        *self.secret_reads.lock().unwrap()
     }
 }
 
@@ -43,6 +48,11 @@ impl TerminalIo for TestTerminal {
 
     fn read_key(&mut self) -> Result<TerminalKey> {
         unreachable!("noninteractive installer tests do not read keys")
+    }
+
+    fn read_secret(&mut self, _prompt: &str) -> Result<Option<zeroize::Zeroizing<String>>> {
+        *self.secret_reads.lock().unwrap() += 1;
+        Ok(None)
     }
 
     fn clear(&mut self) -> Result<()> {

@@ -7,8 +7,8 @@ use dotfiles::cli::{TerminalIo, TerminalKey};
 use dotfiles::error::Result;
 use dotfiles::model::SecretBundle;
 use dotfiles::secrets::{
-    decrypt_bundle, required_values, IdentityPrompt, IdentitySource, SecretMode,
-    TerminalIdentityPrompt,
+    decrypt_bundle, decrypt_bundle_with_prompt, required_values, IdentityPrompt, IdentitySource,
+    SecretMode, TerminalIdentityPrompt,
 };
 use support::secrets::{EncryptedFixture, TempRootGuard};
 use zeroize::Zeroizing;
@@ -141,6 +141,66 @@ fn interactive_identity_prompt_accepts_a_path_or_direct_key() {
     .unwrap()
     .unwrap();
     assert_eq!(resolved.as_identity_count(), 1);
+}
+
+#[test]
+fn empty_identity_file_prompts_for_a_usable_identity() {
+    let fixture = EncryptedFixture::new("KEY=value\n");
+    let temp = tempfile::tempdir().unwrap();
+    let identity_path = temp.path().join("empty-keys.txt");
+    std::fs::write(&identity_path, b"\n# no identities\n").unwrap();
+    let mut prompt = Prompt::new(fixture.identity_text().to_owned());
+
+    let resolved = dotfiles::secrets::resolve_identity(
+        IdentitySource::File(identity_path),
+        SecretMode::Optional,
+        Some(&mut prompt),
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(resolved.as_identity_count(), 1);
+}
+
+#[test]
+fn invalid_identity_file_prompts_for_a_usable_identity() {
+    let fixture = EncryptedFixture::new("KEY=value\n");
+    let temp = tempfile::tempdir().unwrap();
+    let identity_path = temp.path().join("invalid-keys.txt");
+    std::fs::write(&identity_path, b"not-an-age-identity\n").unwrap();
+    let mut prompt = Prompt::new(fixture.identity_text().to_owned());
+
+    let resolved = dotfiles::secrets::resolve_identity(
+        IdentitySource::File(identity_path),
+        SecretMode::Optional,
+        Some(&mut prompt),
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(resolved.as_identity_count(), 1);
+}
+
+#[test]
+fn nonmatching_identity_prompts_for_a_decrypting_identity() {
+    let payload_fixture = EncryptedFixture::new("KEY=value\n");
+    let wrong_fixture = EncryptedFixture::new("WRONG=value\n");
+    let temp = tempfile::tempdir().unwrap();
+    let identity_path = temp.path().join("wrong-keys.txt");
+    wrong_fixture.write_identity(&identity_path);
+    let mut prompt = Prompt::new(payload_fixture.identity_text().to_owned());
+
+    let scope = decrypt_bundle_with_prompt(
+        SecretBundle::Atuin,
+        payload_fixture.payload(),
+        &IdentitySource::File(identity_path),
+        SecretMode::Optional,
+        Some(&mut prompt),
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(scope.values().get("KEY"), Some("value"));
 }
 
 #[test]

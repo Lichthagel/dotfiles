@@ -100,6 +100,7 @@ pub fn resolve_identity(
     mode: SecretMode,
     mut prompt: Option<&mut dyn IdentityPrompt>,
 ) -> Result<Option<ResolvedIdentities>> {
+    let prompt_on_invalid_identity = !matches!(&source, IdentitySource::Direct(_));
     let (identity_text, source_description) = match source {
         IdentitySource::Direct(identity) => (Some(identity), "AGE_IDENTITY".to_owned()),
         IdentitySource::File(path) => match std::fs::read_to_string(&path) {
@@ -156,8 +157,43 @@ pub fn resolve_identity(
         }
     };
 
-    let identities = parse_identities(&identity_text)?;
+    let identities = match parse_identities(&identity_text) {
+        Ok(identities) => identities,
+        Err(error) if prompt_on_invalid_identity => {
+            let prompted = match prompt.as_mut() {
+                Some(prompt) => prompt.prompt_identity()?,
+                None => None,
+            };
+            if let Some(value) = prompted.filter(|value| !value.trim().is_empty()) {
+                let value = trim_secret(&value);
+                let prompted_source = if value.starts_with("AGE-SECRET-KEY-") {
+                    IdentitySource::Direct(value)
+                } else {
+                    IdentitySource::File(PathBuf::from(value.as_str()))
+                };
+                return resolve_identity(prompted_source, mode, None);
+            }
+            return match mode {
+                SecretMode::Optional => Ok(None),
+                SecretMode::Required => Err(error),
+            };
+        }
+        Err(error) => return Err(error),
+    };
     if identities.is_empty() {
+        let prompted = match prompt.as_mut() {
+            Some(prompt) => prompt.prompt_identity()?,
+            None => None,
+        };
+        if let Some(value) = prompted.filter(|value| !value.trim().is_empty()) {
+            let value = trim_secret(&value);
+            let prompted_source = if value.starts_with("AGE-SECRET-KEY-") {
+                IdentitySource::Direct(value)
+            } else {
+                IdentitySource::File(PathBuf::from(value.as_str()))
+            };
+            return resolve_identity(prompted_source, mode, None);
+        }
         return match mode {
             SecretMode::Optional => Ok(None),
             SecretMode::Required => Err(InstallError::Secret(
@@ -197,16 +233,55 @@ pub fn decrypt_bundle_with_prompt(
     ciphertext: &[u8],
     source: &IdentitySource,
     mode: SecretMode,
-    prompt: Option<&mut dyn IdentityPrompt>,
+    mut prompt: Option<&mut dyn IdentityPrompt>,
 ) -> Result<Option<SecretScope>> {
-    let Some(identities) = resolve_identity(source.clone(), mode, prompt)? else {
-        return Ok(None);
+    let identities = match resolve_identity(source.clone(), mode, None) {
+        Ok(Some(identities)) => identities,
+        Ok(None) => {
+            let Some(prompt) = prompt.as_mut() else {
+                return Ok(None);
+            };
+            let Some(identities) = resolve_identity(source.clone(), mode, Some(&mut **prompt))?
+            else {
+                return Ok(None);
+            };
+            identities
+        }
+        Err(error) => {
+            let Some(prompt) = prompt.as_mut() else {
+                return Err(error);
+            };
+            let Some(identities) = resolve_identity(source.clone(), mode, Some(&mut **prompt))?
+            else {
+                return Ok(None);
+            };
+            identities
+        }
     };
     let decryptor = age::Decryptor::new_buffered(ciphertext)
         .map_err(|error| decryption_error(bundle, error))?;
-    let mut reader = decryptor
-        .decrypt(identities.as_identity_iter())
-        .map_err(|error| decryption_error(bundle, error))?;
+    let mut reader = match decryptor.decrypt(identities.as_identity_iter()) {
+        Ok(reader) => reader,
+        Err(error)
+            if error.to_string() == "No matching keys found"
+                && !matches!(source, IdentitySource::Direct(_)) =>
+        {
+            if let Some(prompted_source) = prompted_identity_source(&mut prompt)? {
+                return decrypt_bundle_with_prompt(
+                    bundle,
+                    ciphertext,
+                    &prompted_source,
+                    mode,
+                    None,
+                );
+            }
+            return match mode {
+                SecretMode::Optional => Ok(None),
+                SecretMode::Required => Err(decryption_error(bundle, error)),
+            };
+        }
+        Err(error) => return Err(decryption_error(bundle, error)),
+    };
     let mut plaintext = Zeroizing::new(Vec::new());
     std::io::Read::read_to_end(&mut reader, plaintext.as_mut())
         .map_err(|error| decryption_error(bundle, error))?;
@@ -218,6 +293,24 @@ fn trim_secret(value: &Zeroizing<String>) -> Zeroizing<String> {
     let mut trimmed = Zeroizing::new(String::with_capacity(value.trim().len()));
     trimmed.push_str(value.trim());
     trimmed
+}
+
+fn prompted_identity_source(
+    prompt: &mut Option<&mut dyn IdentityPrompt>,
+) -> Result<Option<IdentitySource>> {
+    let prompted = match prompt.as_mut() {
+        Some(prompt) => prompt.prompt_identity()?,
+        None => None,
+    };
+    let Some(value) = prompted.filter(|value| !value.trim().is_empty()) else {
+        return Ok(None);
+    };
+    let value = trim_secret(&value);
+    Ok(Some(if value.starts_with("AGE-SECRET-KEY-") {
+        IdentitySource::Direct(value)
+    } else {
+        IdentitySource::File(PathBuf::from(value.as_str()))
+    }))
 }
 
 fn parse_identities(contents: &str) -> Result<Vec<x25519::Identity>> {

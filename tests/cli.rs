@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use clap::Parser;
 use dotfiles::cli::{
-    parse_modules, select_modules, select_packages, validate_modules, Cli, PackageSelection,
-    TerminalIo, TerminalKey,
+    parse_modules, select_modules, select_packages, validate_modules, Cli, CrosstermTerminal,
+    PackageSelection, TerminalIo, TerminalKey,
 };
 use dotfiles::error::{ExitCategory, InstallError};
 use dotfiles::model::{PackageManager, Platform};
@@ -127,6 +127,23 @@ fn redirected_module_selection_returns_terminal_error() {
     let mut terminal = FakeTerminal::noninteractive();
     let error = select_modules(&modules, &mut terminal).unwrap_err();
     assert!(matches!(error, InstallError::Usage(message) if message.contains("--modules")));
+}
+
+#[test]
+fn interactive_terminal_clears_screen_and_scrollback() {
+    let mut output = Vec::new();
+    let mut terminal = CrosstermTerminal::new(&mut output);
+    terminal.clear().unwrap();
+    assert_eq!(output, b"\x1b[2J\x1b[3J\x1b[H");
+}
+
+#[test]
+fn interactive_terminal_starts_each_line_at_column_zero() {
+    let mut output = Vec::new();
+    let mut terminal = CrosstermTerminal::new(&mut output);
+    terminal.write_line("first").unwrap();
+    terminal.write_line("second").unwrap();
+    assert_eq!(output, b"first\r\nsecond\r\n");
 }
 
 fn package_plan() -> PackagePlan {

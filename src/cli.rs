@@ -92,6 +92,11 @@ impl TerminalIo for CrosstermTerminal<'_> {
     }
 
     fn read_secret(&mut self, prompt: &str) -> Result<Option<Zeroizing<String>>> {
+        if !self.interactive {
+            return self
+                .read_line(prompt)
+                .map(|value| value.map(Zeroizing::new));
+        }
         self.output
             .write_all(prompt.as_bytes())
             .map_err(InstallError::Io)?;
@@ -147,12 +152,12 @@ impl TerminalIo for CrosstermTerminal<'_> {
 
     fn clear(&mut self) -> Result<()> {
         self.output
-            .write_all(b"\x1b[2J\x1b[H")
+            .write_all(b"\x1b[2J\x1b[3J\x1b[H")
             .map_err(InstallError::Io)
     }
 
     fn write_line(&mut self, line: &str) -> Result<()> {
-        writeln!(self.output, "{line}").map_err(InstallError::Io)?;
+        write!(self.output, "{line}\r\n").map_err(InstallError::Io)?;
         self.output.flush().map_err(InstallError::Io)
     }
 }

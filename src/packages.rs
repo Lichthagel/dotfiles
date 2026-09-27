@@ -56,7 +56,11 @@ impl CommandRunner for SystemCommandRunner {
         };
         #[cfg(not(windows))]
         let mut command = Command::new(program);
-        command.args(args).envs(environment.iter().cloned());
+        command
+            .args(args)
+            .envs(environment.iter().cloned())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         if stdin.is_some() {
             command.stdin(Stdio::piped());
         }
@@ -542,6 +546,22 @@ impl PackageManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn system_runner_captures_command_output() {
+        let (program, args) = if cfg!(windows) {
+            ("cmd", vec!["/C".into(), "echo output".into()])
+        } else {
+            ("sh", vec!["-c".into(), "printf output".into()])
+        };
+        let output = SystemCommandRunner
+            .run(program, &args, &[], None)
+            .expect("command output");
+
+        assert_eq!(output.status, 0);
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "output");
+        assert!(output.stderr.is_empty());
+    }
 
     #[test]
     fn manager_support_matches_platforms() {

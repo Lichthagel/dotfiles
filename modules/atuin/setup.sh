@@ -8,8 +8,12 @@ if [ -z "${ATUIN_USERNAME:-}" ] || [ -z "${ATUIN_PASSWORD:-}" ] || [ -z "${ATUIN
     printf 'Atuin login secrets are missing.\n' >&2
     exit 1
 fi
+# Pass the secrets as flags instead of piping them on stdin: atuin asks for the
+# encryption key before the password on the default (Hub) sync path and in the
+# opposite order on the legacy path, and the password prompt reads the terminal
+# rather than stdin, so no fixed stdin order satisfies both.
 if [ -n "${ATUIN_SYNC_ADDRESS:-}" ]; then
-    printf '%s\n%s\n' "$ATUIN_PASSWORD" "$ATUIN_KEY" | ATUIN_SYNC_ADDRESS="$ATUIN_SYNC_ADDRESS" atuin login -u "$ATUIN_USERNAME"
+    ATUIN_SYNC_ADDRESS="$ATUIN_SYNC_ADDRESS" atuin login -u "$ATUIN_USERNAME" --password "$ATUIN_PASSWORD" --key "$ATUIN_KEY"
 else
-    printf '%s\n%s\n' "$ATUIN_PASSWORD" "$ATUIN_KEY" | atuin login -u "$ATUIN_USERNAME"
+    atuin login -u "$ATUIN_USERNAME" --password "$ATUIN_PASSWORD" --key "$ATUIN_KEY"
 fi

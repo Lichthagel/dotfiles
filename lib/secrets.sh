@@ -50,7 +50,11 @@ dotfiles_decrypt_env() {
     fi
     chmod 600 "$DOTFILES_SECRET_PLAINTEXT"
     local key line value
+    # Secret files are frequently authored on Windows, so strip a trailing CR
+    # from every line: otherwise a CRLF blank line is read as a bare CR and
+    # rejected, and every value would keep a trailing CR.
     while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
         case "$line" in ''|\#*) continue ;; esac
         case "$line" in *=*) ;; *) dotfiles_cleanup_secrets; printf 'Invalid secrets format.\n' >&2; return 1 ;; esac
         key="${line%%=*}"
@@ -64,6 +68,7 @@ dotfiles_decrypt_env() {
 dotfiles_secret_value() {
     local wanted="$1" line key value
     while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
         case "$line" in ''|\#*) continue ;; esac
         case "$line" in *=*) ;; *) continue ;; esac
         key="${line%%=*}"

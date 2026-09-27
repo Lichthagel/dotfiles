@@ -31,6 +31,9 @@ function Initialize-DotfilesSecrets {
     if ($LASTEXITCODE -ne 0) { Remove-Item -LiteralPath $temp -Recurse -Force; throw 'Unable to decrypt secrets.' }
     $values = @{}
     foreach ($line in Get-Content -LiteralPath $plain) {
+        # Secret files are frequently authored on Windows; keep parsing tolerant
+        # of CRLF line endings rather than depending on how Get-Content splits.
+        $line = $line.TrimEnd("`r")
         if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith('#')) { continue }
         if ($line -notmatch '^([^=]+)=(.*)$') { Remove-Item -LiteralPath $temp -Recurse -Force; throw 'Invalid secrets format.' }
         $values[$Matches[1]] = $Matches[2]

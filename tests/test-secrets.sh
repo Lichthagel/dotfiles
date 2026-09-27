@@ -80,6 +80,16 @@ grep -Fxq 'login -u test-user' "$tmp/log/args" || failures=$((failures + 1))
 printf 'test-password\ntest-key\n' | cmp -s - "$tmp/log/stdin" || failures=$((failures + 1))
 [ ! -e "$tmp/state/dotfiles/secrets" ] || failures=$((failures + 1))
 
+# Secret files authored on Windows carry CRLF endings. A CRLF blank line must
+# not be read as a bare CR and rejected, and values must not keep a trailing CR.
+printf 'ATUIN_USERNAME=test-user\r\nATUIN_PASSWORD=test-password\r\nATUIN_KEY=test-key\r\n\r\n' > "$tmp/atuin-crlf.env.age"
+mkdir -p "$tmp/crlf-home/.config/age"
+printf 'identity\n' > "$tmp/crlf-home/.config/age/keys.txt"
+rm -f "$tmp/log/args" "$tmp/log/stdin"
+PATH="$tmp/bin:$PATH" HOME="$tmp/crlf-home" XDG_STATE_HOME="$tmp/crlf-state" ATUIN_TEST_LOG="$tmp/log" DOTFILES_SECRETS_FILE="$tmp/atuin-crlf.env.age" bash "$ROOT/install.sh" --apps atuin --yes >/dev/null || failures=$((failures + 1))
+grep -Fxq 'login -u test-user' "$tmp/log/args" || failures=$((failures + 1))
+printf 'test-password\ntest-key\n' | cmp -s - "$tmp/log/stdin" || failures=$((failures + 1))
+
 mkdir -p "$tmp/bash-only-home"
 PATH="$tmp/bin:$PATH" HOME="$tmp/bash-only-home" XDG_STATE_HOME="$tmp/bash-only-state" bash "$ROOT/install.sh" --apps bash --yes >/dev/null || failures=$((failures + 1))
 [ ! -e "$tmp/bash-only-home/.config/bashrc.d/50-atuin.bash" ] || failures=$((failures + 1))

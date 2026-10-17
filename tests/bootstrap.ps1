@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $fixture = Join-Path ([System.IO.Path]::GetTempPath()) ('bootstrap-fixture-' + [guid]::NewGuid())
-$release = Join-Path $fixture 'repo\releases\download\v1'
+$release = Join-Path $fixture 'repo\dotfiles'
 $bin = Join-Path $release 'dotfiles-windows-x86_64.exe'
 New-Item -ItemType Directory -Force -Path $release | Out-Null
 
@@ -20,12 +20,10 @@ try {
         Copy-Item -LiteralPath ([Uri]$Uri).LocalPath -Destination $OutFile -Force
     }
 
-    $oldRepo = $env:DOTFILES_REPO_URL
-    $oldVersion = $env:DOTFILES_VERSION
+    $oldBaseUrl = $env:DOTFILES_BASE_URL
     $oldProfile = $env:DOTFILES_PROFILE
     try {
-        $env:DOTFILES_REPO_URL = ([Uri](Join-Path $fixture 'repo')).AbsoluteUri
-        $env:DOTFILES_VERSION = 'v1'
+        $env:DOTFILES_BASE_URL = ([Uri](Join-Path $fixture 'repo')).AbsoluteUri
         $PROFILE = Join-Path $fixture 'profile.ps1'
         $profileParent = Split-Path -Parent $PROFILE
         New-Item -ItemType Directory -Force -Path $profileParent | Out-Null
@@ -54,8 +52,7 @@ try {
         $afterBadTemp = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Directory -Filter 'dotfiles-bootstrap-*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
         if (@($afterBadTemp | Where-Object { $_ -notin $beforeBadTemp }).Count -ne 0) { throw 'temporary bootstrap directory was not removed after checksum failure' }
     } finally {
-        if ($null -eq $oldRepo) { Remove-Item Env:DOTFILES_REPO_URL -ErrorAction SilentlyContinue } else { $env:DOTFILES_REPO_URL = $oldRepo }
-        if ($null -eq $oldVersion) { Remove-Item Env:DOTFILES_VERSION -ErrorAction SilentlyContinue } else { $env:DOTFILES_VERSION = $oldVersion }
+        if ($null -eq $oldBaseUrl) { Remove-Item Env:DOTFILES_BASE_URL -ErrorAction SilentlyContinue } else { $env:DOTFILES_BASE_URL = $oldBaseUrl }
         if ($null -eq $oldProfile) { Remove-Item Env:DOTFILES_PROFILE -ErrorAction SilentlyContinue } else { $env:DOTFILES_PROFILE = $oldProfile }
         Remove-Item Function:Invoke-WebRequest -ErrorAction SilentlyContinue
     }

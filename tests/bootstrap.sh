@@ -19,7 +19,7 @@ assert_file_not_exists() {
 
 fixture="$(mktemp -d)"
 trap 'rm -rf "$fixture"' EXIT
-release="$fixture/repo/releases/download/v1"
+release="$fixture/repo/dotfiles"
 mkdir -p "$fixture/bin" "$release"
 
 cat > "$release/dotfiles-linux-x86_64" <<'EOF'
@@ -67,7 +67,7 @@ EOF
 chmod +x "$fixture/bin/uname"
 
 record="$fixture/record"
-output="$(PATH="$fixture/bin:$PATH" DOTFILES_REPO_URL="file://$fixture/repo" DOTFILES_VERSION=v1 \
+output="$(PATH="$fixture/bin:$PATH" DOTFILES_BASE_URL="file://$fixture/repo" \
     BOOTSTRAP_RECORD="$record" sh "$ROOT/bootstrap/install.sh" --modules git --yes 2>&1)"
 status=$?
 [ "$status" -eq 7 ] || fail_test "bootstrap did not forward child status (got $status)"
@@ -78,14 +78,14 @@ assert_contains "$output" 'verified'
 
 if command -v script >/dev/null 2>&1; then
     pty_record="$fixture/pty-record"
-    pty_output="$(script -qec "env PATH='$fixture/bin:$PATH' DOTFILES_REPO_URL='file://$fixture/repo' DOTFILES_VERSION=v1 BOOTSTRAP_RECORD='$pty_record' sh '$ROOT/bootstrap/install.sh'" /dev/null 2>&1)"
+    pty_output="$(script -qec "env PATH='$fixture/bin:$PATH' DOTFILES_BASE_URL='file://$fixture/repo' BOOTSTRAP_RECORD='$pty_record' sh '$ROOT/bootstrap/install.sh'" /dev/null 2>&1)"
     assert_contains "$(cat "$pty_record" 2>/dev/null || true)" 'tty'
     assert_contains "$pty_output" 'verified'
 fi
 
 printf 'not-a-valid-checksum  dotfiles-linux-x86_64\n' > "$release/dotfiles-linux-x86_64.sha256"
 rm -f "$record"
-if PATH="$fixture/bin:$PATH" DOTFILES_REPO_URL="file://$fixture/repo" DOTFILES_VERSION=v1 \
+if PATH="$fixture/bin:$PATH" DOTFILES_BASE_URL="file://$fixture/repo" \
     BOOTSTRAP_RECORD="$record" sh "$ROOT/bootstrap/install.sh" --modules git --yes >/dev/null 2>&1; then
     fail_test 'checksum failure succeeded'
 fi

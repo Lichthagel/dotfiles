@@ -6,21 +6,15 @@ if ([Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT -or
     throw 'This bootstrap supports Windows x86_64 only.'
 }
 
-$repoUrl = if ($env:DOTFILES_REPO_URL) { $env:DOTFILES_REPO_URL.TrimEnd('/') } else { 'https://github.com/Lichthagel/dotfiles' }
-$version = if ($env:DOTFILES_VERSION) { $env:DOTFILES_VERSION } else { 'latest' }
-$releaseUrl = if ($version -eq 'latest') {
-    "$repoUrl/releases/latest/download"
-} else {
-    "$repoUrl/releases/download/$version"
-}
+$baseUrl = if ($env:DOTFILES_BASE_URL) { $env:DOTFILES_BASE_URL.TrimEnd('/') } else { 'https://r2.licht.moe' }
 
 $temporaryDir = Join-Path ([System.IO.Path]::GetTempPath()) ('dotfiles-bootstrap-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $temporaryDir | Out-Null
 try {
     $binary = Join-Path $temporaryDir 'dotfiles-windows-x86_64.exe'
     $checksum = Join-Path $temporaryDir 'dotfiles-windows-x86_64.exe.sha256'
-    Invoke-WebRequest -Uri "$releaseUrl/dotfiles-windows-x86_64.exe" -OutFile $binary
-    Invoke-WebRequest -Uri "$releaseUrl/dotfiles-windows-x86_64.exe.sha256" -OutFile $checksum
+    Invoke-WebRequest -Uri "$baseUrl/dotfiles/dotfiles-windows-x86_64.exe" -OutFile $binary
+    Invoke-WebRequest -Uri "$baseUrl/dotfiles/dotfiles-windows-x86_64.exe.sha256" -OutFile $checksum
 
     $line = Get-Content -LiteralPath $checksum | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
     $expected = if ($line) { ($line.Trim() -split '\s+')[0].ToLowerInvariant() } else { '' }

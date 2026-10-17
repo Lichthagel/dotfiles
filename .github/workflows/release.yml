@@ -1,12 +1,16 @@
-name: Release
+name: Publish latest binaries to Cloudflare R2
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: dotfiles-r2-publish
+  cancel-in-progress: false
 
 jobs:
   validate:
@@ -94,7 +98,7 @@ jobs:
           $hash = (Get-FileHash -LiteralPath 'dist\${{ matrix.artifact }}' -Algorithm SHA256).Hash.ToLowerInvariant()
           Set-Content -LiteralPath 'dist\${{ matrix.artifact }}.sha256' -Value "$hash  ${{ matrix.artifact }}" -NoNewline
 
-      - name: Upload release artifacts
+      - name: Stage build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
@@ -102,18 +106,27 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publish GitHub release
+    name: Publish latest binaries to R2
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Download release artifacts
+      - name: Retrieve build artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
 
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          generate_release_notes: true
+      - name: Upload latest binaries and checksums to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.CLOUDFLARE_R2_BUCKET }}
+        run: >-
+          aws s3 sync dist/
+          "s3://${R2_BUCKET}/dotfiles/"
+          --delete
+          --cache-control "no-cache, no-store, must-revalidate"
+          --no-progress
+          --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"

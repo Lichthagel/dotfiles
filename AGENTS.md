@@ -9,7 +9,7 @@
   encrypted bundles `secrets/atuin.env.age` and `secrets/opencode.env.age`.
 - `src/setup/` contains native Rust setup handlers. Do not add arbitrary Bash
   or PowerShell setup hooks.
-- `bootstrap/install.sh` and `bootstrap/install.ps1` are ephemeral release
+- `bootstrap/install.sh` and `bootstrap/install.ps1` are ephemeral Cloudflare R2
   download helpers only; they are not installer engines.
 - `--modules` selects modules without prompting; `--apps` is its compatibility
   alias. `--yes` bypasses package-plan confirmation, but explicit module

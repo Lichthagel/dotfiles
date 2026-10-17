@@ -6,14 +6,8 @@ case "$(uname -s):$(uname -m)" in
     *) printf 'This bootstrap supports Linux x86_64 only.\n' >&2; exit 2 ;;
 esac
 
-repo_url="${DOTFILES_REPO_URL:-https://github.com/Lichthagel/dotfiles}"
-version="${DOTFILES_VERSION:-latest}"
-repo_url="${repo_url%/}"
-if [ "$version" = latest ]; then
-    release_url="$repo_url/releases/latest/download"
-else
-    release_url="$repo_url/releases/download/$version"
-fi
+base_url="${DOTFILES_BASE_URL:-https://r2.licht.moe}"
+base_url="${base_url%/}"
 
 temporary_dir="$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-bootstrap.XXXXXX")"
 cleanup() { rm -rf -- "$temporary_dir"; }
@@ -21,8 +15,8 @@ trap cleanup EXIT
 
 binary="$temporary_dir/dotfiles-linux-x86_64"
 checksum="$temporary_dir/dotfiles-linux-x86_64.sha256"
-curl -fsSL "$release_url/dotfiles-linux-x86_64" -o "$binary"
-curl -fsSL "$release_url/dotfiles-linux-x86_64.sha256" -o "$checksum"
+curl -fsSL "$base_url/dotfiles/dotfiles-linux-x86_64" -o "$binary"
+curl -fsSL "$base_url/dotfiles/dotfiles-linux-x86_64.sha256" -o "$checksum"
 
 expected=''
 while IFS=' ' read -r candidate _; do

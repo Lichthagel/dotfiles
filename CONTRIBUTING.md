@@ -26,8 +26,13 @@ profile paths and current-user-only credential ACLs; Linux CI covers Linux
 permissions and release compilation.
 
 GitHub Actions runs the Rust tests and Clippy on native Linux and Windows
-runners, exercises both ephemeral bootstraps, and builds release binaries for
-`x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`.
+runners, exercises both ephemeral bootstraps, and builds binaries for
+`x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`. On each push to
+`main`, the publish workflow overwrites the latest binaries and checksums under
+the R2 `dotfiles/` prefix. Set the `CLOUDFLARE_ACCOUNT_ID`,
+`CLOUDFLARE_R2_ACCESS_KEY_ID`, `CLOUDFLARE_R2_SECRET_ACCESS_KEY`, and
+`CLOUDFLARE_R2_BUCKET` Actions secrets to enable uploads; no GitHub Release is
+created.
 
 ## Adding a Module
 
@@ -60,6 +65,7 @@ and latest Catppuccin theme fetching with staged failure-safe updates.
 ## Release and Bootstrap Changes
 
 The Linux and Windows bootstrap helpers are delivery transport only. They must
-select the correct x86_64 artifact, verify its SHA-256 checksum before running
-it, forward arguments and exit status, and remove temporary files. They must
-not contain module or setup logic.
+download the current artifacts from `https://r2.licht.moe/dotfiles/`, select the
+correct x86_64 binary, verify its SHA-256 checksum before running it, forward
+arguments and exit status, and remove temporary files. They must not contain
+module or setup logic.

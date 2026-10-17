@@ -6,9 +6,9 @@ handlers, age secret handling, and embedded configuration assets.
 
 ## Setup
 
-The published one-liners download the matching prebuilt x86_64 binary, verify
-its SHA-256 checksum, run it from a temporary directory, and remove it when
-setup finishes. The binary is not installed persistently:
+The published one-liners download the latest prebuilt x86_64 binary from
+Cloudflare R2, verify its SHA-256 checksum, run it from a temporary directory,
+and remove it when setup finishes. The binary is not installed persistently:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Lichthagel/dotfiles/main/bootstrap/install.sh | sh
@@ -18,11 +18,13 @@ curl -fsSL https://raw.githubusercontent.com/Lichthagel/dotfiles/main/bootstrap/
 irm https://raw.githubusercontent.com/Lichthagel/dotfiles/main/bootstrap/install.ps1 | iex
 ```
 
-The bootstraps support Linux `x86_64` and Windows `x86_64`. Set
-`DOTFILES_REPO_URL` to test a fork or another release repository and
-`DOTFILES_VERSION` to pin a release tag. The Windows bootstrap passes the
-current PowerShell `$PROFILE` through `DOTFILES_PROFILE` so profile mappings
-work when the binary is run outside PowerShell.
+The bootstraps support Linux `x86_64` and Windows `x86_64`. Every push to
+`main` validates and builds both binaries, then replaces the files under the
+R2 `dotfiles/` prefix at `https://r2.licht.moe/dotfiles/`. There are no
+versioned downloads; the bootstrap always installs the current build. Set
+`DOTFILES_BASE_URL` to test another download endpoint. The Windows bootstrap
+passes the current PowerShell `$PROFILE` through `DOTFILES_PROFILE` so profile
+mappings work when the binary is run outside PowerShell.
 
 For a local development build:
 
@@ -65,9 +67,11 @@ cargo clippy --locked -- -D warnings
 pwsh -NoProfile -File .\tests\bootstrap.ps1
 ```
 
-GitHub Actions builds release binaries for `x86_64-unknown-linux-gnu` and
-`x86_64-pc-windows-msvc`, publishes matching `.sha256` files, and runs the
-native test suites.
+GitHub Actions builds binaries for `x86_64-unknown-linux-gnu` and
+`x86_64-pc-windows-msvc`, publishes matching `.sha256` files to Cloudflare R2,
+and runs the native test suites. Configure the repository Actions secrets
+`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_R2_ACCESS_KEY_ID`,
+`CLOUDFLARE_R2_SECRET_ACCESS_KEY`, and `CLOUDFLARE_R2_BUCKET` for uploads.
 
 The current modules are `git`, `bash`, `powershell`, `mise`, `brew`, `scoop`,
 `atuin`, `oh-my-posh`, and `opencode`. `atuin`, `oh-my-posh`, and `opencode`

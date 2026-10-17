@@ -177,15 +177,15 @@ fn private_file_backup_is_protected_before_replacement() {
     let temp = tempdir().unwrap();
     let home = temp.path().join("home");
     fs::create_dir_all(&home).unwrap();
+    let backup_root = temp.path().join("state/dotfiles/backups");
     let platform = UnixPlatform::new(dotfiles::platform::PathContext::new(
         home.clone(),
         None,
-        temp.path().join("state"),
+        backup_root.clone(),
     ));
     let target = home.join("credential");
     fs::write(&target, b"old").unwrap();
     platform.replace_private_file(&target, b"new").unwrap();
-    let backup_root = temp.path().join("state/dotfiles/backups");
     let timestamp = fs::read_dir(&backup_root)
         .unwrap()
         .next()

@@ -6,9 +6,7 @@ use std::sync::{Mutex, OnceLock};
 
 use dotfiles::error::Result;
 use dotfiles::model::{PackageManager, Platform};
-use dotfiles::packages::{
-    CommandOutput, CommandRunner, ManagerAdapter, PackageManagerAdapter, SystemCommandRunner,
-};
+use dotfiles::packages::{CommandOutput, CommandRunner, ManagerAdapter, PackageManagerAdapter};
 use dotfiles::setup::providers::{install_homebrew, install_scoop};
 use dotfiles::setup::{HttpClient, SetupContext};
 use support::mappings::MappingFixture;
@@ -50,7 +48,7 @@ impl CloneRunner {
 
 impl CommandRunner for CloneRunner {
     fn available(&self, program: &str) -> bool {
-        self.available.lock().unwrap().contains(program) || SystemCommandRunner.available(program)
+        self.available.lock().unwrap().contains(program)
     }
 
     fn run(

@@ -38,6 +38,11 @@ try {
         $afterTemp = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Directory -Filter 'dotfiles-bootstrap-*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
         if (@($afterTemp | Where-Object { $_ -notin $beforeTemp }).Count -ne 0) { throw 'temporary bootstrap directory was not removed' }
 
+        $iexCommand = '$args = @("--unknown", "forwarded")' + [Environment]::NewLine + $bootstrapText
+        Invoke-Expression $iexCommand *> $null
+        $iexStatus = $LASTEXITCODE
+        if ($iexStatus -ne 2) { throw "Invoke-Expression did not preserve child status (got $iexStatus)" }
+
         $argumentOutput = (& (Join-Path $root 'bootstrap\install.ps1') --unknown forwarded 2>&1 | Out-String)
         $argumentStatus = $LASTEXITCODE
         if ($argumentStatus -ne 2) { throw "bootstrap did not forward child status (got $argumentStatus)" }

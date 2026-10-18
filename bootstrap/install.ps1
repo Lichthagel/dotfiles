@@ -24,10 +24,8 @@ try {
     Write-Output 'verified dotfiles-windows-x86_64.exe'
 
     if ($PROFILE) { $env:DOTFILES_PROFILE = [string]$PROFILE }
+    # Do not exit here: this bootstrap is commonly evaluated by Invoke-Expression.
     & $binary @args
-    $status = $LASTEXITCODE
-    if ($null -eq $status) { $status = 0 }
-    exit $status
 } finally {
     Remove-Item -LiteralPath $temporaryDir -Recurse -Force -ErrorAction SilentlyContinue
 }

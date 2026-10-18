@@ -9,6 +9,7 @@ fn registry_contains_only_supported_modules() {
         [
             "git",
             "bash",
+            "zsh",
             "powershell",
             "mise",
             "brew",
@@ -60,6 +61,12 @@ fn platform_filtering_excludes_shell_specific_modules() {
     assert!(!registry::find_module("bash")
         .unwrap()
         .supports(Platform::Windows));
+    assert!(registry::find_module("zsh")
+        .unwrap()
+        .supports(Platform::Linux));
+    assert!(!registry::find_module("zsh")
+        .unwrap()
+        .supports(Platform::Windows));
     assert!(registry::find_module("powershell")
         .unwrap()
         .supports(Platform::Windows));
@@ -70,7 +77,7 @@ fn platform_filtering_excludes_shell_specific_modules() {
 
 #[test]
 fn defaults_and_descriptions_match_current_modules() {
-    for module in ["git", "bash", "powershell", "mise"] {
+    for module in ["git", "bash", "zsh", "powershell", "mise"] {
         assert!(registry::find_module(module).unwrap().default_selected);
     }
     for module in ["brew", "scoop", "atuin", "oh-my-posh", "opencode"] {
@@ -194,6 +201,18 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
                 }
     }));
 
+    let zsh = registry::find_module("zsh").unwrap();
+    assert!(zsh.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset == AssetId::Zshrc
+            && mapping.target == Target::Home(".zshrc")
+            && mapping.behavior
+                == MappingBehavior::ManagedSection {
+                    start: "# >>> dotfiles managed zsh section >>>",
+                    end: "# <<< dotfiles managed zsh section <<<",
+                }
+    }));
+
     let powershell = registry::find_module("powershell").unwrap();
     assert!(powershell.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Windows
@@ -214,6 +233,12 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
             && mapping.requires == ["bash"]
     }));
     assert!(mise.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset == AssetId::MiseZsh
+            && mapping.target == Target::Home(".config/zshrc.d/10-mise.zsh")
+            && mapping.requires == ["zsh"]
+    }));
+    assert!(mise.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Windows
             && mapping.asset == AssetId::MisePowerShell
             && mapping.target == Target::ProfileSibling("Profile.d/10-mise.ps1")
@@ -226,6 +251,12 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
             && mapping.asset == AssetId::BrewBash
             && mapping.target == Target::Home(".config/bashrc.d/05-brew.bash")
             && mapping.requires == ["bash"]
+    }));
+    assert!(brew.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset == AssetId::BrewZsh
+            && mapping.target == Target::Home(".config/zshrc.d/05-brew.zsh")
+            && mapping.requires == ["zsh"]
     }));
     let scoop = registry::find_module("scoop").unwrap();
     assert!(scoop.mappings.iter().any(|mapping| {
@@ -241,6 +272,12 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
             && mapping.asset == AssetId::AtuinBash
             && mapping.target == Target::Home(".config/bashrc.d/50-atuin.bash")
             && mapping.requires == ["bash"]
+    }));
+    assert!(atuin.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset == AssetId::AtuinZsh
+            && mapping.target == Target::Home(".config/zshrc.d/50-atuin.zsh")
+            && mapping.requires == ["zsh"]
     }));
     assert!(atuin.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Windows
@@ -261,6 +298,12 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
             && mapping.asset == AssetId::OhMyPoshBash
             && mapping.target == Target::Home(".config/bashrc.d/10-oh-my-posh.bash")
             && mapping.requires == ["bash"]
+    }));
+    assert!(oh_my_posh.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset == AssetId::OhMyPoshZsh
+            && mapping.target == Target::Home(".config/zshrc.d/10-oh-my-posh.zsh")
+            && mapping.requires == ["zsh"]
     }));
     assert!(oh_my_posh.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Windows

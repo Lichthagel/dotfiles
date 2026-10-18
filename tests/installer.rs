@@ -296,6 +296,13 @@ fn mise_only_installs_activation_for_a_previously_applied_shell_without_reapplyi
             include_bytes!("../modules/mise/bash/10-mise.bash").as_slice(),
         ),
         (
+            Platform::Linux,
+            "zsh",
+            ".zshrc",
+            ".config/zshrc.d/10-mise.zsh",
+            include_bytes!("../modules/mise/zsh/10-mise.zsh").as_slice(),
+        ),
+        (
             Platform::Windows,
             "powershell",
             "Documents/PowerShell/Microsoft.PowerShell_profile.ps1",
@@ -338,6 +345,27 @@ fn mise_only_installs_activation_for_a_previously_applied_shell_without_reapplyi
             1
         );
     }
+}
+
+#[test]
+fn selecting_zsh_installs_its_profile_and_mise_dropin() {
+    let runner = FakeRunner::available(["mise", "apt", "dpkg-query", "run0", "apt-get"]);
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    install(
+        InstallRequest::explicit(["zsh", "mise"], true, Platform::Linux),
+        test_context(&mut fixture, &runner),
+    )
+    .unwrap();
+
+    assert_eq!(
+        fs::read(fixture.target(".zshrc")).unwrap(),
+        include_bytes!("../modules/zsh/zshrc")
+    );
+    assert_eq!(
+        fs::read(fixture.target(".config/zshrc.d/10-mise.zsh")).unwrap(),
+        include_bytes!("../modules/mise/zsh/10-mise.zsh")
+    );
+    assert!(!fixture.target(".bashrc").exists());
 }
 
 #[test]
@@ -501,6 +529,7 @@ fn list_does_not_probe_or_install_packages() {
         assert!(text.contains("powershell - PowerShell profile"));
     } else {
         assert!(text.contains("bash - Bash profile"));
+        assert!(text.contains("zsh - Zsh profile"));
     }
 }
 

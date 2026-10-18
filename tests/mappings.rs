@@ -313,6 +313,12 @@ fn shell_profile_mappings_preserve_unmanaged_content_and_update_only_the_managed
             "# <<< dotfiles managed bash section <<<",
         ),
         (
+            "zsh",
+            Platform::Linux,
+            "# >>> dotfiles managed zsh section >>>",
+            "# <<< dotfiles managed zsh section <<<",
+        ),
+        (
             "powershell",
             Platform::Windows,
             "# >>> dotfiles managed powershell section >>>",
@@ -384,9 +390,9 @@ fn shell_profile_mappings_preserve_unmanaged_content_and_update_only_the_managed
 #[test]
 fn malformed_shell_managed_section_is_not_replaced() {
     let fixture = MappingFixture::with_platform(Platform::Linux);
-    let mapping = shell_mapping("bash", Platform::Linux);
+    let mapping = shell_mapping("zsh", Platform::Linux);
     let target = fixture.ops.resolve_target(mapping.target).unwrap();
-    let original = b"user content\n# >>> dotfiles managed bash section >>>\nunfinished\n";
+    let original = b"user content\n# >>> dotfiles managed zsh section >>>\nunfinished\n";
     fs::write(&target, original).unwrap();
 
     let error = apply_mapping(

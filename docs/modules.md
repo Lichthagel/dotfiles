@@ -8,10 +8,11 @@ installs only the requested modules.
 | Module | Platforms | Selected by default | Purpose |
 | --- | --- | --- | --- |
 | `git` | Linux, Windows | Yes | Installs Git and writes `~/.gitconfig`. |
-| `bash` | Linux | Yes | Updates a managed section in `~/.bashrc`, which loads shell integration drop-ins. |
-| `powershell` | Windows | Yes | Updates a managed section in the active PowerShell profile, using `$PROFILE` or the Windows Documents known folder, and loads shell integration drop-ins. |
+| `bash` | Linux | Yes | Updates a managed section in `~/.bashrc`, which loads Bash integration drop-ins. |
+| `zsh` | Linux | Yes | Updates a managed section in `~/.zshrc`, which loads Zsh integration drop-ins. |
+| `powershell` | Windows | Yes | Updates a managed section in the active PowerShell profile, using `$PROFILE` or the Windows Documents known folder, and loads PowerShell integration drop-ins. |
 | `mise` | Linux, Windows | Yes | Installs the mise tool version manager and provides optional shell activation. |
-| `brew` | Linux | No | Sets up Homebrew as a package manager and provides optional Bash integration. |
+| `brew` | Linux | No | Sets up Homebrew as a package manager and provides optional Bash and Zsh integration. |
 | `scoop` | Windows | No | Sets up Scoop as a package manager and provides optional PowerShell integration. |
 | `atuin` | Linux, Windows | No | Installs Atuin shell history, provides optional shell integration, and configures sync login when credentials are available. |
 | `oh-my-posh` | Linux, Windows | No | Installs Oh My Posh, writes the shared prompt configuration, and provides optional shell integration. |
@@ -34,22 +35,23 @@ plan without prompting; unattended setup still requires explicit module
 selection. Use `--list` to list modules supported by the current binary.
 
 Shell integration requires the corresponding shell module to be selected in
-this run or recorded as previously applied: `bash` on Linux or `powershell` on
-Windows. These requirements gate integration files rather than implicitly
-selecting or rerunning shell modules. For example, `--modules mise` copies the
-Bash activation script when `bash` is already recorded, without replacing
-`~/.bashrc`. If the shell module is neither selected nor recorded, shell
-integration is skipped. Existing shell files alone do not satisfy this gate.
+this run or recorded as previously applied: `bash` or `zsh` on Linux, and
+`powershell` on Windows. These requirements gate integration files rather than
+implicitly selecting or rerunning shell modules. For example, `--modules mise`
+copies the Bash activation script when `bash` is recorded, or the Zsh activation
+script when `zsh` is recorded, without replacing either profile. If the shell
+module is neither selected nor recorded, its integration is skipped. Existing
+shell files alone do not satisfy this gate.
 
-Bash and PowerShell profile mappings replace only the section between their
-border comments. Bash uses `# >>> dotfiles managed bash section >>>` and
-`# <<< dotfiles managed bash section <<<`; PowerShell uses the same comments
-with `powershell` in place of `bash`. If a profile has no managed section, the
-installer appends one while preserving the existing contents; malformed or
-unmatched borders stop the update without changing the file. Existing targets
-are backed up before updates, and embedded configuration assets are installed
-as regular files. See the [README](../README.md) for package-manager priority
-and Atuin/OpenCode credential setup.
+Bash, Zsh, and PowerShell profile mappings replace only the section between
+their border comments. Bash uses `# >>> dotfiles managed bash section >>>` and
+`# <<< dotfiles managed bash section <<<`; Zsh and PowerShell use the same
+markers with `zsh` and `powershell` in place of `bash`. If a profile has no
+managed section, the installer appends one while preserving the existing
+contents; malformed or unmatched borders stop the update without changing the
+file. Existing targets are backed up before updates, and embedded configuration
+assets are installed as regular files. See the [README](../README.md) for
+package-manager priority and Atuin/OpenCode credential setup.
 
 ## Applied Module State
 

@@ -104,7 +104,7 @@ fn default_module_selection_and_enter_confirm_selected_defaults() {
         .collect::<Vec<_>>();
     let mut terminal = FakeTerminal::interactive([TerminalKey::Enter]);
     let selected = select_modules(&modules, &mut terminal).unwrap();
-    assert_eq!(selected, ["git", "bash", "mise"]);
+    assert_eq!(selected, ["git", "bash", "zsh", "mise"]);
     assert!(terminal.output.contains("git - Git configuration"));
 }
 
@@ -121,7 +121,7 @@ fn previously_applied_modules_are_labeled_without_changing_selection_defaults() 
     let modules = dotfiles::cli::supported_modules(Platform::Linux);
     let mut terminal = FakeTerminal::interactive([TerminalKey::Enter]);
     let selected = select_modules_with_state(&modules, &state, &mut terminal).unwrap();
-    assert_eq!(selected, ["git", "bash", "mise"]);
+    assert_eq!(selected, ["git", "bash", "zsh", "mise"]);
     assert!(terminal
         .output
         .contains("[x] git - Git configuration (previously applied)"));
@@ -236,6 +236,7 @@ fn run_lists_supported_modules_and_empty_selection_is_a_noop() {
         assert!(listed.contains("powershell - PowerShell profile"));
     } else {
         assert!(listed.contains("bash - Bash profile"));
+        assert!(listed.contains("zsh - Zsh profile"));
     }
 
     let mut output = Vec::new();

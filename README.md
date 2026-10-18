@@ -93,13 +93,13 @@ protection rules can gate deployments.
 See the [module reference](docs/modules.md) for a table of supported modules,
 platforms, and default selections.
 
-The current modules are `git`, `bash`, `powershell`, `mise`, `brew`, `scoop`,
-`atuin`, `oh-my-posh`, and `opencode`. `atuin`, `oh-my-posh`, and `opencode`
-are opt-in. Existing targets are moved into timestamped backup directories
-before updates. Bash and PowerShell profiles update only their border-commented
-managed sections, preserving any text outside those sections. Other embedded
-mappings are materialized as regular files, so they do not depend on the
-temporary binary or a source checkout.
+The current modules are `git`, `bash`, `zsh`, `powershell`, `mise`, `brew`,
+`scoop`, `atuin`, `oh-my-posh`, and `opencode`. `atuin`, `oh-my-posh`, and
+`opencode` are opt-in. Existing targets are moved into timestamped backup
+directories before updates. Bash, Zsh, and PowerShell profiles update only their
+border-commented managed sections, preserving any text outside those sections.
+Other embedded mappings are materialized as regular files, so they do not depend
+on the temporary binary or a source checkout.
 
 Package-manager priority is `apt`, `dnf`, `pacman`, `brew`, `mise` on Linux and
 `winget`, `scoop`, `brew`, `mise` on Windows. Linux system managers prefer
@@ -108,10 +108,10 @@ Package-manager priority is `apt`, `dnf`, `pacman`, `brew`, `mise` on Linux and
 ### Oh My Posh
 
 Oh My Posh is an opt-in cross-platform prompt module. Select it interactively
-or use `--modules bash,oh-my-posh` / `--modules powershell,oh-my-posh` alongside
-the corresponding shell module, unless that shell is already recorded as
-applied. The module installs the shared prompt configuration and a shell-specific
-integration drop-in.
+or use one of `--modules bash,oh-my-posh`, `--modules zsh,oh-my-posh`, or
+`--modules powershell,oh-my-posh` together with the corresponding shell module,
+unless that shell is already recorded as applied. The module installs the shared
+prompt configuration and a shell-specific integration drop-in.
 
 ### Atuin
 
@@ -128,14 +128,16 @@ platform default identity path is used otherwise. No external `age` command or
 age package is required by the installer.
 
 Shell modules load numbered integration drop-ins from their platform-specific
-profile directories. Mapping requirements are gates, not implicit module
-selections: a selected module's drop-in is installed when its required shell
-module is selected or recorded as previously applied. Use `--modules bash,atuin`
-on Linux or `--modules powershell,atuin` on Windows for a first installation
-with shell integration. Once the shell is recorded, selecting only `atuin` or
-`mise` also copies its shell integration without rerunning the shell module.
-Without a selected or previously applied shell, these modules skip their shell
-integration and do not create the shell profile.
+profile directories: Bash and Zsh use `~/.config/bashrc.d/` and
+`~/.config/zshrc.d/`; PowerShell uses `Profile.d` beside its profile. Mapping
+requirements are gates, not implicit module selections: a selected module's
+drop-in is installed when its required shell module is selected or recorded as
+previously applied. Use `--modules bash,atuin` or `--modules zsh,atuin` on Linux,
+or `--modules powershell,atuin` on Windows, for a first installation with shell
+integration. Once the shell is recorded, selecting only `atuin` or `mise` also
+copies its shell integration without rerunning the shell module. Without a
+selected or previously applied shell, these modules skip their shell integration
+and do not create the shell profile.
 
 ### OpenCode
 

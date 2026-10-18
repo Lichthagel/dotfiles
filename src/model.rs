@@ -19,31 +19,41 @@ pub enum PackageManager {
 pub enum AssetId {
     GitConfig,
     Bashrc,
+    Zshrc,
     PowerShellProfile,
     MiseBash,
+    MiseZsh,
     MisePowerShell,
     BrewBash,
+    BrewZsh,
     ScoopPowerShell,
     AtuinBash,
+    AtuinZsh,
     AtuinPowerShell,
     OhMyPoshConfig,
     OhMyPoshBash,
+    OhMyPoshZsh,
     OhMyPoshPowerShell,
 }
 
 impl AssetId {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 17] = [
         Self::GitConfig,
         Self::Bashrc,
+        Self::Zshrc,
         Self::PowerShellProfile,
         Self::MiseBash,
+        Self::MiseZsh,
         Self::MisePowerShell,
         Self::BrewBash,
+        Self::BrewZsh,
         Self::ScoopPowerShell,
         Self::AtuinBash,
+        Self::AtuinZsh,
         Self::AtuinPowerShell,
         Self::OhMyPoshConfig,
         Self::OhMyPoshBash,
+        Self::OhMyPoshZsh,
         Self::OhMyPoshPowerShell,
     ];
 

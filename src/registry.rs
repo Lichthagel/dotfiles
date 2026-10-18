@@ -59,11 +59,16 @@ const WINDOWS: &[Platform] = &[Platform::Windows];
 const CROSS_PLATFORM: &[Platform] = &[Platform::Linux, Platform::Windows];
 const NO_REQUIREMENTS: &[&str] = &[];
 const REQUIRES_BASH: &[&str] = &["bash"];
+const REQUIRES_ZSH: &[&str] = &["zsh"];
 const REQUIRES_POWERSHELL: &[&str] = &["powershell"];
 const REPLACE_MAPPING: MappingBehavior = MappingBehavior::Replace;
 const BASH_PROFILE_SECTION: MappingBehavior = MappingBehavior::ManagedSection {
     start: "# >>> dotfiles managed bash section >>>",
     end: "# <<< dotfiles managed bash section <<<",
+};
+const ZSH_PROFILE_SECTION: MappingBehavior = MappingBehavior::ManagedSection {
+    start: "# >>> dotfiles managed zsh section >>>",
+    end: "# <<< dotfiles managed zsh section <<<",
 };
 const POWERSHELL_PROFILE_SECTION: MappingBehavior = MappingBehavior::ManagedSection {
     start: "# >>> dotfiles managed powershell section >>>",
@@ -260,6 +265,14 @@ const BASH_MAPPINGS: &[MappingSpec] = &[MappingSpec {
     behavior: BASH_PROFILE_SECTION,
 }];
 
+const ZSH_MAPPINGS: &[MappingSpec] = &[MappingSpec {
+    platform: Platform::Linux,
+    asset: AssetId::Zshrc,
+    target: Target::Home(".zshrc"),
+    requires: NO_REQUIREMENTS,
+    behavior: ZSH_PROFILE_SECTION,
+}];
+
 const POWERSHELL_MAPPINGS: &[MappingSpec] = &[MappingSpec {
     platform: Platform::Windows,
     asset: AssetId::PowerShellProfile,
@@ -277,6 +290,13 @@ const MISE_MAPPINGS: &[MappingSpec] = &[
         behavior: REPLACE_MAPPING,
     },
     MappingSpec {
+        platform: Platform::Linux,
+        asset: AssetId::MiseZsh,
+        target: Target::Home(".config/zshrc.d/10-mise.zsh"),
+        requires: REQUIRES_ZSH,
+        behavior: REPLACE_MAPPING,
+    },
+    MappingSpec {
         platform: Platform::Windows,
         asset: AssetId::MisePowerShell,
         target: Target::ProfileSibling("Profile.d/10-mise.ps1"),
@@ -285,13 +305,22 @@ const MISE_MAPPINGS: &[MappingSpec] = &[
     },
 ];
 
-const BREW_MAPPINGS: &[MappingSpec] = &[MappingSpec {
-    platform: Platform::Linux,
-    asset: AssetId::BrewBash,
-    target: Target::Home(".config/bashrc.d/05-brew.bash"),
-    requires: REQUIRES_BASH,
-    behavior: REPLACE_MAPPING,
-}];
+const BREW_MAPPINGS: &[MappingSpec] = &[
+    MappingSpec {
+        platform: Platform::Linux,
+        asset: AssetId::BrewBash,
+        target: Target::Home(".config/bashrc.d/05-brew.bash"),
+        requires: REQUIRES_BASH,
+        behavior: REPLACE_MAPPING,
+    },
+    MappingSpec {
+        platform: Platform::Linux,
+        asset: AssetId::BrewZsh,
+        target: Target::Home(".config/zshrc.d/05-brew.zsh"),
+        requires: REQUIRES_ZSH,
+        behavior: REPLACE_MAPPING,
+    },
+];
 
 const SCOOP_MAPPINGS: &[MappingSpec] = &[MappingSpec {
     platform: Platform::Windows,
@@ -307,6 +336,13 @@ const ATUIN_MAPPINGS: &[MappingSpec] = &[
         asset: AssetId::AtuinBash,
         target: Target::Home(".config/bashrc.d/50-atuin.bash"),
         requires: REQUIRES_BASH,
+        behavior: REPLACE_MAPPING,
+    },
+    MappingSpec {
+        platform: Platform::Linux,
+        asset: AssetId::AtuinZsh,
+        target: Target::Home(".config/zshrc.d/50-atuin.zsh"),
+        requires: REQUIRES_ZSH,
         behavior: REPLACE_MAPPING,
     },
     MappingSpec {
@@ -331,6 +367,13 @@ const OH_MY_POSH_MAPPINGS: &[MappingSpec] = &[
         asset: AssetId::OhMyPoshBash,
         target: Target::Home(".config/bashrc.d/10-oh-my-posh.bash"),
         requires: REQUIRES_BASH,
+        behavior: REPLACE_MAPPING,
+    },
+    MappingSpec {
+        platform: Platform::Linux,
+        asset: AssetId::OhMyPoshZsh,
+        target: Target::Home(".config/zshrc.d/10-oh-my-posh.zsh"),
+        requires: REQUIRES_ZSH,
         behavior: REPLACE_MAPPING,
     },
     MappingSpec {
@@ -371,6 +414,18 @@ pub static MODULES: &[ModuleSpec] = &[
         requires: NO_REQUIREMENTS,
         packages: &[],
         mappings: BASH_MAPPINGS,
+        setup: SetupKind::None,
+        secret_bundle: None,
+    },
+    ModuleSpec {
+        id: "zsh",
+        description: "Zsh profile",
+        platforms: LINUX,
+        default_selected: true,
+        provides: None,
+        requires: NO_REQUIREMENTS,
+        packages: &[],
+        mappings: ZSH_MAPPINGS,
         setup: SetupKind::None,
         secret_bundle: None,
     },

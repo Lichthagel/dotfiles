@@ -145,6 +145,7 @@ fn interactive_identity_prompt_accepts_a_path_or_direct_key() {
 
 #[test]
 fn empty_identity_file_prompts_for_a_usable_identity() {
+    let _lock = environment_lock();
     let fixture = EncryptedFixture::new("KEY=value\n");
     let temp = tempfile::tempdir().unwrap();
     let identity_path = temp.path().join("empty-keys.txt");
@@ -164,6 +165,7 @@ fn empty_identity_file_prompts_for_a_usable_identity() {
 
 #[test]
 fn invalid_identity_file_prompts_for_a_usable_identity() {
+    let _lock = environment_lock();
     let fixture = EncryptedFixture::new("KEY=value\n");
     let temp = tempfile::tempdir().unwrap();
     let identity_path = temp.path().join("invalid-keys.txt");
@@ -183,6 +185,7 @@ fn invalid_identity_file_prompts_for_a_usable_identity() {
 
 #[test]
 fn nonmatching_identity_prompts_for_a_decrypting_identity() {
+    let _lock = environment_lock();
     let payload_fixture = EncryptedFixture::new("KEY=value\n");
     let wrong_fixture = EncryptedFixture::new("WRONG=value\n");
     let temp = tempfile::tempdir().unwrap();

@@ -1,4 +1,7 @@
-use crate::model::{EmbeddedAsset, PackageManager, Platform, Target};
+use std::fmt;
+
+use crate::model::{EmbeddedAsset, EmbeddedSecretBundle, PackageManager, Platform, Target};
+use crate::setup::{SecretRequestHandler, SetupHandler};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PackageSpec {
@@ -25,7 +28,7 @@ pub struct MappingSpec {
     pub behavior: MappingBehavior,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy)]
 pub struct ModuleSpec {
     pub id: &'static str,
     pub description: &'static str,
@@ -35,8 +38,28 @@ pub struct ModuleSpec {
     pub requires: &'static [&'static str],
     pub packages: &'static [PackageSpec],
     pub mappings: &'static [MappingSpec],
-    pub setup: crate::model::SetupKind,
-    pub secret_bundle: Option<crate::model::EmbeddedSecretBundle>,
+    pub setup: Option<SetupHandler>,
+    pub secret_request: Option<SecretRequestHandler>,
+    pub secret_bundle: Option<EmbeddedSecretBundle>,
+}
+
+impl fmt::Debug for ModuleSpec {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ModuleSpec")
+            .field("id", &self.id)
+            .field("description", &self.description)
+            .field("platforms", &self.platforms)
+            .field("default_selected", &self.default_selected)
+            .field("provides", &self.provides)
+            .field("requires", &self.requires)
+            .field("packages", &self.packages)
+            .field("mappings", &self.mappings)
+            .field("has_setup", &self.setup.is_some())
+            .field("has_secret_request", &self.secret_request.is_some())
+            .field("secret_bundle", &self.secret_bundle)
+            .finish()
+    }
 }
 
 impl ModuleSpec {

@@ -9,7 +9,7 @@ use dotfiles::engine::{
 };
 use dotfiles::engine::{ordered_phases, resolve_modules_from_registry};
 use dotfiles::error::Result;
-use dotfiles::model::{PackageManager, Platform, SetupKind};
+use dotfiles::model::{PackageManager, Platform};
 use dotfiles::platform::PlatformOps;
 use dotfiles::registry::{MappingSpec, ModuleSpec, PackageSpec};
 use dotfiles::run;
@@ -42,7 +42,8 @@ static TEST_PROVIDER: ModuleSpec = ModuleSpec {
     requires: &[],
     packages: TEST_PROVIDER_PACKAGES,
     mappings: TEST_NO_MAPPINGS,
-    setup: SetupKind::None,
+    setup: None,
+    secret_request: None,
     secret_bundle: None,
 };
 static TEST_CONSUMER: ModuleSpec = ModuleSpec {
@@ -54,7 +55,8 @@ static TEST_CONSUMER: ModuleSpec = ModuleSpec {
     requires: &[],
     packages: TEST_CONSUMER_PACKAGES,
     mappings: TEST_NO_MAPPINGS,
-    setup: SetupKind::None,
+    setup: None,
+    secret_request: None,
     secret_bundle: None,
 };
 static TEST_MODULES: &[ModuleSpec] = &[TEST_PROVIDER, TEST_CONSUMER];
@@ -248,7 +250,7 @@ fn setup_failure_does_not_record_the_module() {
     let mut fixture = InstallFixture::new(Platform::Linux);
     let modules = [ModuleSpec {
         id: "failing-setup",
-        setup: SetupKind::OpenCode,
+        setup: Some(dotfiles::modules::opencode::configure_opencode),
         packages: &[],
         ..TEST_CONSUMER
     }];
@@ -638,7 +640,8 @@ fn synthetic_dependency_cycles_are_rejected() {
         requires: A_REQUIRES,
         packages: EMPTY_PACKAGES,
         mappings: EMPTY_MAPPINGS,
-        setup: SetupKind::None,
+        setup: None,
+        secret_request: None,
         secret_bundle: None,
     };
     static B: ModuleSpec = ModuleSpec {
@@ -650,7 +653,8 @@ fn synthetic_dependency_cycles_are_rejected() {
         requires: B_REQUIRES,
         packages: EMPTY_PACKAGES,
         mappings: EMPTY_MAPPINGS,
-        setup: SetupKind::None,
+        setup: None,
+        secret_request: None,
         secret_bundle: None,
     };
     static CYCLE: &[ModuleSpec] = &[A, B];

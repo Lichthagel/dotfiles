@@ -9,9 +9,9 @@
 ## Scope and Constraints
 
 - Preserve `src/registry.rs` as the single typed catalog. It assembles explicit definitions exported by module files; no filesystem discovery, manifests, runtime plugins, or registration macros.
-- Keep `ModuleSpec`, `PackageSpec`, `MappingSpec`, and `MappingBehavior` in `src/registry.rs`. Preserve module IDs, order, descriptions, defaults, platforms, dependencies, package alternatives, mapping gates, setup kinds, and bundle associations during extraction.
+- Keep `ModuleSpec`, `PackageSpec`, `MappingSpec`, and `MappingBehavior` in `src/registry.rs`. Preserve module IDs, order, descriptions, defaults, platforms, dependencies, package alternatives, mapping gates, direct setup/secret-request handler references, and bundle associations during extraction.
 - Keep the engine responsible for selection, dependency resolution, provider-first phases, package confirmation, scoped secret decryption, setup dispatch, mappings, and completion state.
-- Keep `SetupKind` and typed dispatch. Do not introduce a module trait, dynamic hook collection, or generic action DSL for this refactor.
+- Store each module's setup and secret-request functions directly in its `SPEC` as typed function pointers. Do not introduce module traits, plugin registration, or a generic action DSL.
 - Modules with only package and mapping declarations do not need an imperative setup function.
 - Keep static assets in the existing root `modules/` directory and encrypted bundles under `secrets/`. Each module file explicitly embeds its own static assets and any encrypted bundle it uses.
 - Preserve native Rust setup, command-runner injection, HTTP injection, platform permissions, staged replacement, backups before actual replacement, and rollback after a failed final rename.
@@ -135,7 +135,7 @@ Do not promise cross-file transactions, crash recovery, or protection against co
 - [x] Export the Rust `modules` namespace from `src/lib.rs`.
 - [x] Move each `ModuleSpec` and its private package/mapping constants to its corresponding file. Preserve the existing declarations exactly.
 - [x] Replace the registry's large inline definitions with the explicit `SPEC` catalog. Keep `modules()`, `find_module()`, spec types, and existing method behavior available at their current paths.
-- [x] Leave setup implementations in their current files for this task. Definitions still reference the same `SetupKind` values.
+- [x] Leave setup implementations in their current files for this task. Initially, definitions still referenced the same `SetupKind` values; the later setup-colocation task moved handlers beside their `SPEC`s.
 - [x] Keep manager priority behavior unchanged; moving unrelated model/adapter methods is out of scope.
 - [x] Run `cargo fmt --check` and `cargo test --locked --test registry --test assets --test cli --test packages --test installer`.
 
@@ -143,14 +143,14 @@ Do not promise cross-file transactions, crash recovery, or protection against co
 
 ## Task 3: Colocate Custom Setup With Its Module
 
-**Files:** `src/modules/{atuin,brew,scoop,opencode}.rs`, `src/setup/{mod,providers,atuin,opencode}.rs`, existing setup integration tests and fixtures.
+**Files:** `src/modules/{atuin,brew,scoop,opencode}.rs`, `src/setup/{mod,providers}.rs`, existing setup integration tests and fixtures.
 
 - [x] Move Atuin status/login/setup implementation into `src/modules/atuin.rs`, alongside its `SPEC`.
 - [x] Move OpenCode configuration, credential, and theme orchestration into `src/modules/opencode.rs`. Keep HTTP and JSONC utilities in `src/setup/`; update imports without changing behavior.
 - [x] Split Homebrew and Scoop orchestration into `src/modules/brew.rs` and `src/modules/scoop.rs`.
 - [x] Keep genuinely shared provider operations in `src/setup/providers.rs`: ensure Git, clone-if-absent mechanics, directory creation, process PATH handling, verification, and contextual errors. Give helpers only the visibility the module handlers need.
-- [x] Keep old public setup paths as thin re-exports, not duplicate implementations: `setup::atuin`, `setup::opencode`, and the existing public provider functions. This avoids an unrelated library API break and keeps integration-test imports stable.
-- [x] Keep `setup::run_setup` as exhaustive `SetupKind` dispatch to the canonical implementations. Do not introduce per-module install loops.
+- [x] Initially kept old public setup paths as thin re-exports. After module handlers and tests moved to `src/modules/`, removed the redundant Atuin/OpenCode setup shims.
+- [x] Store module-specific setup handlers directly in each `SPEC`; the engine invokes the selected function pointer without a second `SetupKind` dispatch.
 - [x] Run `cargo fmt --check` and `cargo test --locked --test atuin --test providers --test opencode --test packages --test installer`.
 
 **Acceptance:** Custom behavior has one implementation in its owning module file. Existing setup APIs, command sequences, error categories, and security tests retain parity.
@@ -193,13 +193,13 @@ Do not promise cross-file transactions, crash recovery, or protection against co
 
 **Files:** `src/setup/mod.rs`, `src/modules/{atuin,opencode}.rs`, `src/engine.rs`, `tests/{atuin,installer,secrets}.rs`.
 
-- [x] Add a small `SetupProbeContext` containing platform and runner access, without secrets. Add typed `secret_request(kind, probe) -> Result<Option<SecretMode>>` dispatch.
+- [x] Add a small `SetupProbeContext` containing platform and runner access, without secrets. Store each module's typed `secret_request(probe)` handler directly in its `SPEC`.
 - [x] Make Atuin's module-owned requirement function inspect login status: return no secret request when logged in, otherwise `Required`. OpenCode returns `Optional`; modules without secret setup return none.
-- [x] Replace the engine's direct `SetupKind::Atuin` comparison and `atuin_is_logged_in` call with the generic secret-request result plus `module.secret_bundle`.
+- [x] Have the engine invoke the module-provided secret-request handler and pair its result with `module.secret_bundle`.
 - [x] Keep identity prompting, in-memory decryption, and secret-scope lifetime owned by the engine. Preserve existing OpenCode and interactive prompting rules rather than changing the identity UX in this refactor.
 - [x] Retain the defensive login-status check in Atuin's public setup function. Two read-only status checks during engine-driven setup are acceptable; avoid a new stateful prepared-setup abstraction just to remove one query.
 - [x] Test logged-in Atuin with no identity available, logged-out Atuin with valid and missing credentials, status-command execution failure, optional OpenCode identity absence, and secret-request failure before mapping/state completion.
-- [x] Keep `SetupKind` exhaustive. Do not add engine branches naming individual module IDs or reaching into module implementations.
+- [x] Keep engine code generic: it invokes optional setup and secret-request function pointers from each `ModuleSpec`, without branches naming module IDs.
 - [x] Run `cargo fmt --check` and `cargo test --locked --test atuin --test secrets --test installer --test opencode`.
 
 **Acceptance:** The engine does not know how Atuin determines its credential requirement. No secret is requested or decrypted for an already authenticated Atuin instance.

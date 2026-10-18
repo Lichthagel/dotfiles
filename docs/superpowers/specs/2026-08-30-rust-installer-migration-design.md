@@ -56,15 +56,21 @@ engine and narrow platform adapters:
 src/
   main.rs                 CLI and exit-code handling
   cli.rs                  argument parsing and interactive mode
-  registry.rs             typed module/package/mapping registry
+  registry.rs             explicit typed ModuleSpec catalog
   engine.rs               dependency resolution and installation phases
-  secrets.rs              age decryption, module-local bundle lookup, and temporary secret scope
+  secrets.rs              age decryption and temporary secret scope
   packages.rs             package-manager discovery and installation
   mappings.rs             target expansion, backup, and replacement
+  modules/
+    atuin.rs              Atuin spec, embedded bundle, and setup handlers
+    opencode.rs           OpenCode spec, embedded bundle, and setup handlers
+    brew.rs               Homebrew provider spec and setup handler
+    scoop.rs              Scoop provider spec and setup handler
+    ...                   remaining module specs and local assets
   setup/
-    atuin.rs              Atuin login/setup
-    opencode.rs           OpenCode configuration and themes
-    package_managers.rs   manager-specific setup helpers where needed
+    http.rs               shared HTTP client behavior
+    jsonc.rs              shared JSONC parsing
+    providers.rs          shared provider setup operations
   platform/
     mod.rs                shared platform interface
     unix.rs               Linux paths, permissions, and process behavior
@@ -77,8 +83,8 @@ are intentional:
 - The engine knows module semantics and installation order, not shell syntax or
   OS-specific path rules.
 - The registry contains typed data and references to module-local embedded assets.
-- Setup handlers are Rust functions selected from typed setup variants; there is
-  no arbitrary setup-script execution path.
+- Module specs hold direct, typed function pointers for setup and secret requests;
+  there is no arbitrary setup-script execution path.
 - Platform adapters expose only operations that genuinely differ between Linux
   and Windows: path conventions, file permissions/ACLs, terminal behavior,
   process invocation details, and package-manager commands.
@@ -142,7 +148,7 @@ Conceptually, a module contains:
 - module requirements;
 - package-manager provider capability, when applicable;
 - optional embedded secret bundle descriptor (diagnostic name plus encrypted bytes);
-- typed setup variant, if any;
+- optional setup and secret-request function pointers;
 - typed mappings from platform to embedded asset and target.
 
 Examples of typed concepts include `Platform::{Linux, Windows}`,

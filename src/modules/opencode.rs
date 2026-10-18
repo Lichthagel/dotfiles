@@ -1,6 +1,6 @@
 use super::{CROSS_PLATFORM, NO_REQUIREMENTS};
 use crate::error::{InstallError, Result};
-use crate::model::{EmbeddedSecretBundle, PackageManager, Platform, SetupKind};
+use crate::model::{EmbeddedSecretBundle, PackageManager, Platform};
 use crate::platform::PlatformOps;
 use crate::registry::{ModuleSpec, PackageSpec};
 use crate::secrets::{SecretMode, SecretValues};
@@ -43,7 +43,8 @@ pub const SPEC: ModuleSpec = ModuleSpec {
     requires: NO_REQUIREMENTS,
     packages: OPENCODE_PACKAGES,
     mappings: &[],
-    setup: SetupKind::OpenCode,
+    setup: Some(configure_opencode),
+    secret_request: Some(secret_request),
     secret_bundle: Some(OPENCODE_SECRET_BUNDLE),
 };
 

@@ -1,5 +1,5 @@
 use super::{NO_REQUIREMENTS, POWERSHELL_PROFILE_SECTION, WINDOWS};
-use crate::model::{EmbeddedAsset, Platform, SetupKind, Target};
+use crate::model::{EmbeddedAsset, Platform, Target};
 use crate::registry::{MappingSpec, ModuleSpec};
 
 const POWERSHELL_PROFILE_ASSET: EmbeddedAsset = EmbeddedAsset::new(
@@ -24,6 +24,7 @@ pub const SPEC: ModuleSpec = ModuleSpec {
     requires: NO_REQUIREMENTS,
     packages: &[],
     mappings: POWERSHELL_MAPPINGS,
-    setup: SetupKind::None,
+    setup: None,
+    secret_request: None,
     secret_bundle: None,
 };

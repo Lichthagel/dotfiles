@@ -2,7 +2,7 @@ use super::{
     CROSS_PLATFORM, NO_REQUIREMENTS, REPLACE_MAPPING, REQUIRES_BASH, REQUIRES_POWERSHELL,
     REQUIRES_ZSH,
 };
-use crate::model::{EmbeddedAsset, PackageManager, Platform, SetupKind, Target};
+use crate::model::{EmbeddedAsset, PackageManager, Platform, Target};
 use crate::registry::{MappingSpec, ModuleSpec, PackageSpec};
 
 const OH_MY_POSH_PACKAGES: &[PackageSpec] = &[
@@ -107,6 +107,7 @@ pub const SPEC: ModuleSpec = ModuleSpec {
     requires: NO_REQUIREMENTS,
     packages: OH_MY_POSH_PACKAGES,
     mappings: OH_MY_POSH_MAPPINGS,
-    setup: SetupKind::None,
+    setup: None,
+    secret_request: None,
     secret_bundle: None,
 };

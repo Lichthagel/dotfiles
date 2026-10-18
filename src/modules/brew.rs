@@ -1,6 +1,6 @@
 use super::{LINUX, NO_REQUIREMENTS, REPLACE_MAPPING, REQUIRES_BASH, REQUIRES_ZSH};
 use crate::error::{InstallError, Result};
-use crate::model::{EmbeddedAsset, PackageManager, Platform, SetupKind, Target};
+use crate::model::{EmbeddedAsset, PackageManager, Platform, Target};
 use crate::registry::{MappingSpec, ModuleSpec};
 use crate::setup::providers::{
     clone_repository, create_directory, ensure_git, prepend_path, verify_manager,
@@ -44,7 +44,8 @@ pub const SPEC: ModuleSpec = ModuleSpec {
     requires: NO_REQUIREMENTS,
     packages: &[],
     mappings: BREW_MAPPINGS,
-    setup: SetupKind::Homebrew,
+    setup: Some(install_homebrew),
+    secret_request: None,
     secret_bundle: None,
 };
 

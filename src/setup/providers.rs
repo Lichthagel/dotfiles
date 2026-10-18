@@ -1,6 +1,3 @@
-pub use crate::modules::brew::install_homebrew;
-pub use crate::modules::scoop::install_scoop;
-
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};

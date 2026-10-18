@@ -1,5 +1,5 @@
 use super::{CROSS_PLATFORM, NO_REQUIREMENTS, REPLACE_MAPPING};
-use crate::model::{EmbeddedAsset, PackageManager, Platform, SetupKind, Target};
+use crate::model::{EmbeddedAsset, PackageManager, Platform, Target};
 use crate::registry::{MappingSpec, ModuleSpec, PackageSpec};
 
 const GIT_PACKAGES: &[PackageSpec] = &[
@@ -71,6 +71,7 @@ pub const SPEC: ModuleSpec = ModuleSpec {
     requires: NO_REQUIREMENTS,
     packages: GIT_PACKAGES,
     mappings: GIT_MAPPINGS,
-    setup: SetupKind::None,
+    setup: None,
+    secret_request: None,
     secret_bundle: None,
 };

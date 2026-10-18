@@ -1,4 +1,4 @@
-use dotfiles::model::{PackageManager, Platform, SetupKind, Target};
+use dotfiles::model::{PackageManager, Platform, Target};
 use dotfiles::registry::{self, MappingBehavior};
 
 #[test]
@@ -35,6 +35,8 @@ fn provider_and_secret_contracts_match_existing_modules() {
         registry::find_module("mise").unwrap().provides,
         Some(PackageManager::Mise)
     );
+    assert!(registry::find_module("brew").unwrap().setup.is_some());
+    assert!(registry::find_module("scoop").unwrap().setup.is_some());
     assert_eq!(
         registry::find_module("atuin")
             .unwrap()
@@ -49,14 +51,16 @@ fn provider_and_secret_contracts_match_existing_modules() {
             .map(|bundle| bundle.name),
         Some("OpenCode")
     );
-    assert_eq!(
-        registry::find_module("atuin").unwrap().setup,
-        SetupKind::Atuin
-    );
-    assert_eq!(
-        registry::find_module("opencode").unwrap().setup,
-        SetupKind::OpenCode
-    );
+    assert!(registry::find_module("atuin").unwrap().setup.is_some());
+    assert!(registry::find_module("atuin")
+        .unwrap()
+        .secret_request
+        .is_some());
+    assert!(registry::find_module("opencode").unwrap().setup.is_some());
+    assert!(registry::find_module("opencode")
+        .unwrap()
+        .secret_request
+        .is_some());
 }
 
 #[test]

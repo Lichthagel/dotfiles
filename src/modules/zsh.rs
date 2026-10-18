@@ -1,5 +1,5 @@
 use super::{LINUX, NO_REQUIREMENTS, ZSH_PROFILE_SECTION};
-use crate::model::{EmbeddedAsset, Platform, SetupKind, Target};
+use crate::model::{EmbeddedAsset, Platform, Target};
 use crate::registry::{MappingSpec, ModuleSpec};
 
 const ZSHRC_ASSET: EmbeddedAsset =
@@ -22,6 +22,7 @@ pub const SPEC: ModuleSpec = ModuleSpec {
     requires: NO_REQUIREMENTS,
     packages: &[],
     mappings: ZSH_MAPPINGS,
-    setup: SetupKind::None,
+    setup: None,
+    secret_request: None,
     secret_bundle: None,
 };

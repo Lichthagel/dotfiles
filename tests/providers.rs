@@ -6,8 +6,9 @@ use std::sync::{Mutex, OnceLock};
 
 use dotfiles::error::Result;
 use dotfiles::model::{PackageManager, Platform};
+use dotfiles::modules::brew::install_homebrew;
+use dotfiles::modules::scoop::install_scoop;
 use dotfiles::packages::{CommandOutput, CommandRunner, ManagerAdapter, PackageManagerAdapter};
-use dotfiles::setup::providers::{install_homebrew, install_scoop};
 use dotfiles::setup::{HttpClient, SetupContext};
 use support::mappings::MappingFixture;
 

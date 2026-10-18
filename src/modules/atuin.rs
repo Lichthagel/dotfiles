@@ -3,9 +3,7 @@ use super::{
     REQUIRES_ZSH,
 };
 use crate::error::{InstallError, Result};
-use crate::model::{
-    EmbeddedAsset, EmbeddedSecretBundle, PackageManager, Platform, SetupKind, Target,
-};
+use crate::model::{EmbeddedAsset, EmbeddedSecretBundle, PackageManager, Platform, Target};
 use crate::packages::CommandRunner;
 use crate::registry::{MappingSpec, ModuleSpec, PackageSpec};
 use crate::secrets::{required_values, SecretMode, SecretValues};
@@ -99,7 +97,8 @@ pub const SPEC: ModuleSpec = ModuleSpec {
     requires: NO_REQUIREMENTS,
     packages: ATUIN_PACKAGES,
     mappings: ATUIN_MAPPINGS,
-    setup: SetupKind::Atuin,
+    setup: Some(setup_atuin),
+    secret_request: Some(secret_request),
     secret_bundle: Some(ATUIN_SECRET_BUNDLE),
 };
 

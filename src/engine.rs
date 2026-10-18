@@ -8,7 +8,7 @@ use crate::packages::{
 use crate::platform::{FileChange, PlatformOps, TimestampProvider};
 use crate::registry::{self, ModuleSpec};
 use crate::secrets::{decrypt_embedded, SecretMode, TerminalIdentityPrompt};
-use crate::setup::{run_setup, secret_request, HttpClient, SetupContext, SetupProbeContext};
+use crate::setup::{HttpClient, SetupContext, SetupProbeContext};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub struct InstallContext<'a> {
@@ -272,10 +272,12 @@ pub fn install_with_registry(
             platform: context.platform,
             runner: context.runner,
         };
-        let secret_scope = match (
-            module.secret_bundle,
-            secret_request(module.setup, &probe_context)?,
-        ) {
+        let requested_secret_mode = module
+            .secret_request
+            .map(|request| request(&probe_context))
+            .transpose()?
+            .flatten();
+        let secret_scope = match (module.secret_bundle, requested_secret_mode) {
             (Some(bundle), Some(mode)) => {
                 let mut prompt = (mode == SecretMode::Optional
                     || context.terminal.is_interactive())
@@ -297,8 +299,10 @@ pub fn install_with_registry(
             secrets: secret_scope.as_ref().map(|scope| scope.values()),
         };
         side_effects_started = true;
-        run_setup(module.setup, &setup_context)
-            .map_err(|error| InstallError::Setup(format!("{}: {error}", module.id)))?;
+        if let Some(setup) = module.setup {
+            setup(&setup_context)
+                .map_err(|error| InstallError::Setup(format!("{}: {error}", module.id)))?;
+        }
         let backups = apply_module_mappings(
             context.platform,
             module,

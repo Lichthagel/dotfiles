@@ -1,6 +1,6 @@
 use super::{NO_REQUIREMENTS, REPLACE_MAPPING, REQUIRES_POWERSHELL, WINDOWS};
 use crate::error::{InstallError, Result};
-use crate::model::{EmbeddedAsset, PackageManager, Platform, SetupKind, Target};
+use crate::model::{EmbeddedAsset, PackageManager, Platform, Target};
 use crate::platform::current_scoop_root;
 use crate::registry::{MappingSpec, ModuleSpec};
 use crate::setup::providers::{
@@ -30,7 +30,8 @@ pub const SPEC: ModuleSpec = ModuleSpec {
     requires: NO_REQUIREMENTS,
     packages: &[],
     mappings: SCOOP_MAPPINGS,
-    setup: SetupKind::Scoop,
+    setup: Some(install_scoop),
+    secret_request: None,
     secret_bundle: None,
 };
 

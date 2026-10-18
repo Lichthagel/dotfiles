@@ -1,5 +1,5 @@
 use super::{BASH_PROFILE_SECTION, LINUX, NO_REQUIREMENTS};
-use crate::model::{EmbeddedAsset, Platform, SetupKind, Target};
+use crate::model::{EmbeddedAsset, Platform, Target};
 use crate::registry::{MappingSpec, ModuleSpec};
 
 const BASHRC_ASSET: EmbeddedAsset =
@@ -22,6 +22,7 @@ pub const SPEC: ModuleSpec = ModuleSpec {
     requires: NO_REQUIREMENTS,
     packages: &[],
     mappings: BASH_MAPPINGS,
-    setup: SetupKind::None,
+    setup: None,
+    secret_request: None,
     secret_bundle: None,
 };

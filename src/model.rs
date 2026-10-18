@@ -60,15 +60,6 @@ impl fmt::Debug for EmbeddedSecretBundle {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum SetupKind {
-    None,
-    Homebrew,
-    Scoop,
-    Atuin,
-    OpenCode,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Target {
     Home(&'static str),
     ProfileFile,

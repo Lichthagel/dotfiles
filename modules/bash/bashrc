@@ -1,6 +1,7 @@
-# User shell additions belong here.
+# >>> dotfiles managed bash section >>>
 export EDITOR="${EDITOR:-vi}"
 
 for file in "$HOME/.config/bashrc.d/"*.bash; do
     [ -r "$file" ] && . "$file"
 done
+# <<< dotfiles managed bash section <<<

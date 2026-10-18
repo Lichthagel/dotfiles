@@ -8,8 +8,8 @@ installs only the requested modules.
 | Module | Platforms | Selected by default | Purpose |
 | --- | --- | --- | --- |
 | `git` | Linux, Windows | Yes | Installs Git and writes `~/.gitconfig`. |
-| `bash` | Linux | Yes | Writes `~/.bashrc`, which loads shell integration drop-ins. |
-| `powershell` | Windows | Yes | Writes the active PowerShell profile, using `$PROFILE` or the Windows Documents known folder, and loads shell integration drop-ins. |
+| `bash` | Linux | Yes | Updates a managed section in `~/.bashrc`, which loads shell integration drop-ins. |
+| `powershell` | Windows | Yes | Updates a managed section in the active PowerShell profile, using `$PROFILE` or the Windows Documents known folder, and loads shell integration drop-ins. |
 | `mise` | Linux, Windows | Yes | Installs the mise tool version manager and provides optional shell activation. |
 | `brew` | Linux | No | Sets up Homebrew as a package manager and provides optional Bash integration. |
 | `scoop` | Windows | No | Sets up Scoop as a package manager and provides optional PowerShell integration. |
@@ -41,9 +41,15 @@ Bash activation script when `bash` is already recorded, without replacing
 `~/.bashrc`. If the shell module is neither selected nor recorded, shell
 integration is skipped. Existing shell files alone do not satisfy this gate.
 
-Existing targets are backed up before replacement, and embedded configuration
-assets are installed as regular files. See the [README](../README.md) for
-package-manager priority and Atuin/OpenCode credential setup.
+Bash and PowerShell profile mappings replace only the section between their
+border comments. Bash uses `# >>> dotfiles managed bash section >>>` and
+`# <<< dotfiles managed bash section <<<`; PowerShell uses the same comments
+with `powershell` in place of `bash`. If a profile has no managed section, the
+installer appends one while preserving the existing contents; malformed or
+unmatched borders stop the update without changing the file. Existing targets
+are backed up before updates, and embedded configuration assets are installed
+as regular files. See the [README](../README.md) for package-manager priority
+and Atuin/OpenCode credential setup.
 
 ## Applied Module State
 

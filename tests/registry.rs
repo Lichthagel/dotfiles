@@ -1,5 +1,5 @@
 use dotfiles::model::{AssetId, PackageManager, Platform, SecretBundle, SetupKind, Target};
-use dotfiles::registry;
+use dotfiles::registry::{self, MappingBehavior};
 
 #[test]
 fn registry_contains_only_supported_modules() {
@@ -187,6 +187,11 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
         mapping.platform == Platform::Linux
             && mapping.asset == AssetId::Bashrc
             && mapping.target == Target::Home(".bashrc")
+            && mapping.behavior
+                == MappingBehavior::ManagedSection {
+                    start: "# >>> dotfiles managed bash section >>>",
+                    end: "# <<< dotfiles managed bash section <<<",
+                }
     }));
 
     let powershell = registry::find_module("powershell").unwrap();
@@ -194,6 +199,11 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
         mapping.platform == Platform::Windows
             && mapping.asset == AssetId::PowerShellProfile
             && mapping.target == Target::ProfileFile
+            && mapping.behavior
+                == MappingBehavior::ManagedSection {
+                    start: "# >>> dotfiles managed powershell section >>>",
+                    end: "# <<< dotfiles managed powershell section <<<",
+                }
     }));
 
     let mise = registry::find_module("mise").unwrap();

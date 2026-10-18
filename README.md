@@ -96,8 +96,10 @@ platforms, and default selections.
 The current modules are `git`, `bash`, `powershell`, `mise`, `brew`, `scoop`,
 `atuin`, `oh-my-posh`, and `opencode`. `atuin`, `oh-my-posh`, and `opencode`
 are opt-in. Existing targets are moved into timestamped backup directories
-before replacement. Embedded mappings are installed as regular files, so they
-do not depend on the temporary binary or a source checkout.
+before updates. Bash and PowerShell profiles update only their border-commented
+managed sections, preserving any text outside those sections. Other embedded
+mappings are materialized as regular files, so they do not depend on the
+temporary binary or a source checkout.
 
 Package-manager priority is `apt`, `dnf`, `pacman`, `brew`, `mise` on Linux and
 `winget`, `scoop`, `brew`, `mise` on Windows. Linux system managers prefer

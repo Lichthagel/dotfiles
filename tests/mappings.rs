@@ -4,6 +4,7 @@ use dotfiles::assets::asset_bytes;
 use dotfiles::mappings::{apply_mapping, backup_root, resolve_target};
 use dotfiles::model::{Platform, Target};
 use dotfiles::platform::{PlatformOps, SystemTimestamp};
+use dotfiles::registry::{self, MappingBehavior, MappingSpec};
 use std::fs;
 use std::sync::{Mutex, OnceLock};
 use support::mappings::{
@@ -300,6 +301,115 @@ fn environment_profile_and_localappdata_overrides_are_used_by_windows_platform()
     restore_env("DOTFILES_HOME", old_home);
     restore_env("DOTFILES_PROFILE", old_profile);
     restore_env("LOCALAPPDATA", old_local);
+}
+
+#[test]
+fn shell_profile_mappings_preserve_unmanaged_content_and_update_only_the_managed_section() {
+    let cases = [
+        (
+            "bash",
+            Platform::Linux,
+            "# >>> dotfiles managed bash section >>>",
+            "# <<< dotfiles managed bash section <<<",
+        ),
+        (
+            "powershell",
+            Platform::Windows,
+            "# >>> dotfiles managed powershell section >>>",
+            "# <<< dotfiles managed powershell section <<<",
+        ),
+    ];
+
+    for (module_id, platform, start, end) in cases {
+        let fixture = MappingFixture::with_platform(platform);
+        let mapping = shell_mapping(module_id, platform);
+        assert!(matches!(
+            mapping.behavior,
+            MappingBehavior::ManagedSection { .. }
+        ));
+        let target = fixture.ops.resolve_target(mapping.target).unwrap();
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let user_content = b"# user configuration without a final newline";
+        fs::write(&target, user_content).unwrap();
+
+        apply_mapping(
+            &fixture.ops,
+            mapping,
+            asset_bytes(mapping.asset),
+            &SystemTimestamp,
+        )
+        .unwrap();
+        let first_install = fs::read(&target).unwrap();
+        assert!(first_install.starts_with(user_content));
+        assert!(first_install
+            .windows(start.len())
+            .any(|window| window == start.as_bytes()));
+        assert!(first_install
+            .windows(end.len())
+            .any(|window| window == end.as_bytes()));
+
+        apply_mapping(
+            &fixture.ops,
+            mapping,
+            asset_bytes(mapping.asset),
+            &SystemTimestamp,
+        )
+        .unwrap();
+        assert_eq!(fs::read(&target).unwrap(), first_install);
+
+        let prefix = b"# before managed block\n";
+        let suffix = b"# after managed block\n";
+        let mut existing = prefix.to_vec();
+        existing.extend_from_slice(start.as_bytes());
+        existing.extend_from_slice(b"\nold managed contents\n");
+        existing.extend_from_slice(end.as_bytes());
+        existing.extend_from_slice(b"\n");
+        existing.extend_from_slice(suffix);
+        fs::write(&target, existing).unwrap();
+
+        apply_mapping(
+            &fixture.ops,
+            mapping,
+            asset_bytes(mapping.asset),
+            &SystemTimestamp,
+        )
+        .unwrap();
+        let mut expected = prefix.to_vec();
+        expected.extend_from_slice(asset_bytes(mapping.asset));
+        expected.extend_from_slice(suffix);
+        assert_eq!(fs::read(&target).unwrap(), expected);
+    }
+}
+
+#[test]
+fn malformed_shell_managed_section_is_not_replaced() {
+    let fixture = MappingFixture::with_platform(Platform::Linux);
+    let mapping = shell_mapping("bash", Platform::Linux);
+    let target = fixture.ops.resolve_target(mapping.target).unwrap();
+    let original = b"user content\n# >>> dotfiles managed bash section >>>\nunfinished\n";
+    fs::write(&target, original).unwrap();
+
+    let error = apply_mapping(
+        &fixture.ops,
+        mapping,
+        asset_bytes(mapping.asset),
+        &SystemTimestamp,
+    )
+    .unwrap_err();
+
+    assert!(error
+        .to_string()
+        .contains("invalid managed-section boundary"));
+    assert_eq!(fs::read(target).unwrap(), original);
+}
+
+fn shell_mapping(module_id: &str, platform: Platform) -> &'static MappingSpec {
+    registry::find_module(module_id)
+        .expect("shell module")
+        .mappings
+        .iter()
+        .find(|mapping| mapping.platform == platform)
+        .expect("shell profile mapping")
 }
 
 fn restore_env(name: &str, value: Option<std::ffi::OsString>) {

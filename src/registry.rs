@@ -8,11 +8,21 @@ pub struct PackageSpec {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MappingBehavior {
+    Replace,
+    ManagedSection {
+        start: &'static str,
+        end: &'static str,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MappingSpec {
     pub platform: Platform,
     pub asset: AssetId,
     pub target: Target,
     pub requires: &'static [&'static str],
+    pub behavior: MappingBehavior,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -50,6 +60,15 @@ const CROSS_PLATFORM: &[Platform] = &[Platform::Linux, Platform::Windows];
 const NO_REQUIREMENTS: &[&str] = &[];
 const REQUIRES_BASH: &[&str] = &["bash"];
 const REQUIRES_POWERSHELL: &[&str] = &["powershell"];
+const REPLACE_MAPPING: MappingBehavior = MappingBehavior::Replace;
+const BASH_PROFILE_SECTION: MappingBehavior = MappingBehavior::ManagedSection {
+    start: "# >>> dotfiles managed bash section >>>",
+    end: "# <<< dotfiles managed bash section <<<",
+};
+const POWERSHELL_PROFILE_SECTION: MappingBehavior = MappingBehavior::ManagedSection {
+    start: "# >>> dotfiles managed powershell section >>>",
+    end: "# <<< dotfiles managed powershell section <<<",
+};
 
 const GIT_PACKAGES: &[PackageSpec] = &[
     PackageSpec {
@@ -222,12 +241,14 @@ const GIT_MAPPINGS: &[MappingSpec] = &[
         asset: AssetId::GitConfig,
         target: Target::Home(".gitconfig"),
         requires: NO_REQUIREMENTS,
+        behavior: REPLACE_MAPPING,
     },
     MappingSpec {
         platform: Platform::Windows,
         asset: AssetId::GitConfig,
         target: Target::Home(".gitconfig"),
         requires: NO_REQUIREMENTS,
+        behavior: REPLACE_MAPPING,
     },
 ];
 
@@ -236,6 +257,7 @@ const BASH_MAPPINGS: &[MappingSpec] = &[MappingSpec {
     asset: AssetId::Bashrc,
     target: Target::Home(".bashrc"),
     requires: NO_REQUIREMENTS,
+    behavior: BASH_PROFILE_SECTION,
 }];
 
 const POWERSHELL_MAPPINGS: &[MappingSpec] = &[MappingSpec {
@@ -243,6 +265,7 @@ const POWERSHELL_MAPPINGS: &[MappingSpec] = &[MappingSpec {
     asset: AssetId::PowerShellProfile,
     target: Target::ProfileFile,
     requires: NO_REQUIREMENTS,
+    behavior: POWERSHELL_PROFILE_SECTION,
 }];
 
 const MISE_MAPPINGS: &[MappingSpec] = &[
@@ -251,12 +274,14 @@ const MISE_MAPPINGS: &[MappingSpec] = &[
         asset: AssetId::MiseBash,
         target: Target::Home(".config/bashrc.d/10-mise.bash"),
         requires: REQUIRES_BASH,
+        behavior: REPLACE_MAPPING,
     },
     MappingSpec {
         platform: Platform::Windows,
         asset: AssetId::MisePowerShell,
         target: Target::ProfileSibling("Profile.d/10-mise.ps1"),
         requires: REQUIRES_POWERSHELL,
+        behavior: REPLACE_MAPPING,
     },
 ];
 
@@ -265,6 +290,7 @@ const BREW_MAPPINGS: &[MappingSpec] = &[MappingSpec {
     asset: AssetId::BrewBash,
     target: Target::Home(".config/bashrc.d/05-brew.bash"),
     requires: REQUIRES_BASH,
+    behavior: REPLACE_MAPPING,
 }];
 
 const SCOOP_MAPPINGS: &[MappingSpec] = &[MappingSpec {
@@ -272,6 +298,7 @@ const SCOOP_MAPPINGS: &[MappingSpec] = &[MappingSpec {
     asset: AssetId::ScoopPowerShell,
     target: Target::ProfileSibling("Profile.d/05-scoop.ps1"),
     requires: REQUIRES_POWERSHELL,
+    behavior: REPLACE_MAPPING,
 }];
 
 const ATUIN_MAPPINGS: &[MappingSpec] = &[
@@ -280,12 +307,14 @@ const ATUIN_MAPPINGS: &[MappingSpec] = &[
         asset: AssetId::AtuinBash,
         target: Target::Home(".config/bashrc.d/50-atuin.bash"),
         requires: REQUIRES_BASH,
+        behavior: REPLACE_MAPPING,
     },
     MappingSpec {
         platform: Platform::Windows,
         asset: AssetId::AtuinPowerShell,
         target: Target::ProfileSibling("Profile.d/50-atuin.ps1"),
         requires: REQUIRES_POWERSHELL,
+        behavior: REPLACE_MAPPING,
     },
 ];
 
@@ -295,24 +324,28 @@ const OH_MY_POSH_MAPPINGS: &[MappingSpec] = &[
         asset: AssetId::OhMyPoshConfig,
         target: Target::Home(".config/oh-my-posh/config.json"),
         requires: NO_REQUIREMENTS,
+        behavior: REPLACE_MAPPING,
     },
     MappingSpec {
         platform: Platform::Linux,
         asset: AssetId::OhMyPoshBash,
         target: Target::Home(".config/bashrc.d/10-oh-my-posh.bash"),
         requires: REQUIRES_BASH,
+        behavior: REPLACE_MAPPING,
     },
     MappingSpec {
         platform: Platform::Windows,
         asset: AssetId::OhMyPoshConfig,
         target: Target::ProfileSibling("oh-my-posh.config.json"),
         requires: NO_REQUIREMENTS,
+        behavior: REPLACE_MAPPING,
     },
     MappingSpec {
         platform: Platform::Windows,
         asset: AssetId::OhMyPoshPowerShell,
         target: Target::ProfileSibling("Profile.d/10-oh-my-posh.ps1"),
         requires: REQUIRES_POWERSHELL,
+        behavior: REPLACE_MAPPING,
     },
 ];
 

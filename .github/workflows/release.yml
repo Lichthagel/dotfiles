@@ -109,6 +109,8 @@ jobs:
     name: Publish latest binaries to R2
     needs: build
     runs-on: ubuntu-latest
+    environment:
+      name: production
     steps:
       - name: Retrieve build artifacts
         uses: actions/download-artifact@v4

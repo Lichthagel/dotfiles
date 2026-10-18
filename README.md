@@ -69,9 +69,11 @@ pwsh -NoProfile -File .\tests\bootstrap.ps1
 
 GitHub Actions builds binaries for `x86_64-unknown-linux-gnu` and
 `x86_64-pc-windows-msvc`, publishes matching `.sha256` files to Cloudflare R2,
-and runs the native test suites. Configure the repository Actions secrets
-`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_R2_ACCESS_KEY_ID`,
-`CLOUDFLARE_R2_SECRET_ACCESS_KEY`, and `CLOUDFLARE_R2_BUCKET` for uploads.
+and runs the native test suites. The publish job uses the `production`
+Actions environment; configure `CLOUDFLARE_ACCOUNT_ID`,
+`CLOUDFLARE_R2_ACCESS_KEY_ID`, `CLOUDFLARE_R2_SECRET_ACCESS_KEY`, and
+`CLOUDFLARE_R2_BUCKET` as environment secrets for uploads. Environment
+protection rules can gate deployments.
 
 See the [module reference](docs/modules.md) for a table of supported modules,
 platforms, and default selections.

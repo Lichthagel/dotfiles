@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - refactor/rust
 
 permissions:
   contents: read

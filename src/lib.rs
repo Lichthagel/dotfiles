@@ -9,6 +9,7 @@ pub mod platform;
 pub mod registry;
 pub mod secrets;
 pub mod setup;
+pub mod state;
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -17,7 +18,8 @@ use clap::error::ErrorKind;
 use clap::Parser;
 
 use cli::{
-    print_module_list, select_modules, supported_modules, Cli, CrosstermTerminal, InstallRequest,
+    print_module_list, select_modules_with_state, supported_modules, Cli, CrosstermTerminal,
+    InstallRequest, TerminalIo,
 };
 use engine::{install, InstallContext};
 use error::{InstallError, Result};
@@ -63,7 +65,12 @@ where
             Some(modules) => modules.clone(),
             None => {
                 let available = supported_modules(platform);
-                select_modules(&available, &mut terminal)?
+                let state = if terminal.is_interactive() {
+                    state::ModuleState::load(&platform_ops.state_path()?)?
+                } else {
+                    state::ModuleState::default()
+                };
+                select_modules_with_state(&available, &state, &mut terminal)?
             }
         };
         if modules.is_empty() {

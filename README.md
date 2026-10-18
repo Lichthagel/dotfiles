@@ -54,7 +54,10 @@ cargo run -- --modules git,powershell --yes
 - `--help` prints usage.
 
 Without `--modules`/`--apps`, the binary opens the interactive module checklist.
-Explicit module selection is required for unattended setup.
+Explicit module selection is required for unattended setup. The checklist marks
+previously applied modules using a local state file; selected modules still run
+again. See [applied module state](docs/modules.md#applied-module-state) for paths
+and behavior.
 
 A package is skipped when its command is already in `PATH`, using the logical name from the module declaration, so a tool installed outside the package manager is not reinstalled and needs no available package manager.
 
@@ -102,8 +105,9 @@ Package-manager priority is `apt`, `dnf`, `pacman`, `brew`, `mise` on Linux and
 
 Oh My Posh is an opt-in cross-platform prompt module. Select it interactively
 or use `--modules bash,oh-my-posh` / `--modules powershell,oh-my-posh` alongside
-the corresponding shell module. The module installs the shared prompt
-configuration and a shell-specific integration drop-in.
+the corresponding shell module, unless that shell is already recorded as
+applied. The module installs the shared prompt configuration and a shell-specific
+integration drop-in.
 
 ### Atuin
 
@@ -121,12 +125,13 @@ age package is required by the installer.
 
 Shell modules load numbered integration drop-ins from their platform-specific
 profile directories. Mapping requirements are gates, not implicit module
-selections: a drop-in is installed only when both its module and required shell
-module are selected. Use `--modules bash,atuin` on Linux or
-`--modules powershell,atuin` on Windows to install Atuin with its shell
-integration; selecting only `atuin` still performs package/login setup. On
-Windows, use `--modules mise,powershell` to install mise with its activation
-drop-in; selecting only `mise` does not enable the PowerShell profile.
+selections: a selected module's drop-in is installed when its required shell
+module is selected or recorded as previously applied. Use `--modules bash,atuin`
+on Linux or `--modules powershell,atuin` on Windows for a first installation
+with shell integration. Once the shell is recorded, selecting only `atuin` or
+`mise` also copies its shell integration without rerunning the shell module.
+Without a selected or previously applied shell, these modules skip their shell
+integration and do not create the shell profile.
 
 ### OpenCode
 

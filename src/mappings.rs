@@ -48,7 +48,7 @@ pub fn apply_embedded_mapping(
 pub fn apply_module_mappings(
     ops: &dyn PlatformOps,
     module: &ModuleSpec,
-    resolved_modules: &[String],
+    available_modules: &[String],
     timestamp: &dyn TimestampProvider,
 ) -> Result<Vec<BackupRecord>> {
     let mut backups = Vec::new();
@@ -57,7 +57,7 @@ pub fn apply_module_mappings(
             || mapping
                 .requires
                 .iter()
-                .any(|required| !resolved_modules.iter().any(|id| id == required))
+                .any(|required| !available_modules.iter().any(|id| id == required))
         {
             continue;
         }

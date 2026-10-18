@@ -261,6 +261,10 @@ fn environment_home_and_state_overrides_are_used_by_unix_platform() {
         platform.backup_root().unwrap(),
         state.join("dotfiles/backups")
     );
+    assert_eq!(
+        platform.state_path().unwrap(),
+        state.join("dotfiles/state.json")
+    );
 
     restore_env("DOTFILES_HOME", old_home);
     restore_env("XDG_STATE_HOME", old_state);
@@ -287,6 +291,10 @@ fn environment_profile_and_localappdata_overrides_are_used_by_windows_platform()
     assert_eq!(
         platform.backup_root().unwrap(),
         local.join("dotfiles/backups")
+    );
+    assert_eq!(
+        platform.state_path().unwrap(),
+        local.join("dotfiles/state.json")
     );
 
     restore_env("DOTFILES_HOME", old_home);

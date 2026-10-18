@@ -2,6 +2,8 @@
 .dotfiles-cache/
 .worktrees/
 target/
+/state.json
+/state.lock
 secrets/*.env
 /atuin.env
 /opencode.env

@@ -10,8 +10,10 @@ use dotfiles::engine::{
 use dotfiles::engine::{ordered_phases, resolve_modules_from_registry};
 use dotfiles::error::Result;
 use dotfiles::model::{PackageManager, Platform, SetupKind};
+use dotfiles::platform::PlatformOps;
 use dotfiles::registry::{MappingSpec, ModuleSpec, PackageSpec};
 use dotfiles::run;
+use dotfiles::state::ModuleState;
 use support::installer::{test_context, InstallFixture};
 use support::runner::FakeRunner;
 
@@ -108,6 +110,149 @@ fn git_installs_before_mapping() {
 }
 
 #[test]
+fn successful_modules_are_recorded_and_reruns_still_apply_mappings() {
+    let runner = FakeRunner::available(["git", "apt", "dpkg-query", "run0", "apt-get"]);
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    let path = fixture.ops.state_path().unwrap();
+    for _ in 0..2 {
+        fs::write(fixture.target(".gitconfig"), b"needs repair").unwrap();
+        install(
+            InstallRequest::explicit(["git", "bash"], true, Platform::Linux),
+            test_context(&mut fixture, &runner),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read(fixture.target(".gitconfig")).unwrap(),
+            include_bytes!("../modules/git/gitconfig")
+        );
+        let json: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"schema_version": 1, "modules": ["bash", "git"]})
+        );
+    }
+}
+
+#[test]
+fn completed_modules_remain_recorded_when_a_later_package_fails() {
+    let runner = FakeRunner::apt_install_failure();
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    assert!(install(
+        InstallRequest::explicit(["bash", "git"], true, Platform::Linux),
+        test_context(&mut fixture, &runner),
+    )
+    .is_err());
+    let state = ModuleState::load(&fixture.ops.state_path().unwrap()).unwrap();
+    assert!(state.contains("bash"));
+    assert!(!state.contains("git"));
+}
+
+#[test]
+fn mapping_failure_does_not_record_the_module() {
+    let runner = FakeRunner::available(["git", "apt", "dpkg-query", "run0", "apt-get"]);
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    fixture.ops = fixture.ops.clone().with_failing_rename();
+    assert!(install(
+        InstallRequest::explicit(["git"], true, Platform::Linux),
+        test_context(&mut fixture, &runner),
+    )
+    .is_err());
+    assert!(!fixture.ops.state_path().unwrap().exists());
+}
+
+#[test]
+fn setup_failure_does_not_record_the_module() {
+    let runner = FakeRunner::available(std::iter::empty::<&str>());
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    let modules = [ModuleSpec {
+        id: "failing-setup",
+        setup: SetupKind::OpenCode,
+        packages: &[],
+        ..TEST_CONSUMER
+    }];
+    struct FailingHttp;
+    impl dotfiles::setup::HttpClient for FailingHttp {
+        fn get_json(&self, _url: &str) -> Result<serde_json::Value> {
+            Err(dotfiles::error::InstallError::Setup(
+                "injected HTTP failure".into(),
+            ))
+        }
+        fn get_bytes(&self, _url: &str) -> Result<Vec<u8>> {
+            Err(dotfiles::error::InstallError::Setup(
+                "injected HTTP failure".into(),
+            ))
+        }
+    }
+    let _lock = environment_lock();
+    let _config_home = support::ScopedXdgConfigHome::new(fixture.target(".config"));
+    let mut context = test_context(&mut fixture, &runner);
+    context.http = &FailingHttp;
+    assert!(install_with_registry(
+        InstallRequest::explicit(["failing-setup"], true, Platform::Linux),
+        context,
+        &modules,
+    )
+    .is_err());
+    assert!(!fixture.ops.state_path().unwrap().exists());
+}
+
+#[test]
+fn invalid_state_fails_before_package_or_mapping_changes() {
+    let runner = FakeRunner::apt_without_mise_then_mise_after_install();
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    let path = fixture.ops.state_path().unwrap();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, b"invalid").unwrap();
+    assert!(install(
+        InstallRequest::explicit(["git"], true, Platform::Linux),
+        test_context(&mut fixture, &runner),
+    )
+    .is_err());
+    assert!(runner.calls().is_empty());
+    assert!(!fixture.target(".gitconfig").exists());
+    assert_eq!(fs::read(&path).unwrap(), b"invalid");
+}
+
+#[test]
+fn intentionally_skipped_packages_do_not_prevent_recording_applied_dotfiles() {
+    // Use an interactive terminal that deselects the only package and confirms.
+    struct ToggleTerminal(std::collections::VecDeque<TerminalKey>);
+    impl TerminalIo for ToggleTerminal {
+        fn is_interactive(&self) -> bool {
+            true
+        }
+        fn read_key(&mut self) -> Result<TerminalKey> {
+            Ok(self.0.pop_front().unwrap())
+        }
+        fn clear(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn write_line(&mut self, _line: &str) -> Result<()> {
+            Ok(())
+        }
+    }
+    let runner = FakeRunner::apt_without_mise_then_mise_after_install();
+    let fixture = InstallFixture::new(Platform::Linux);
+    let mut terminal = ToggleTerminal([TerminalKey::Space, TerminalKey::Enter].into());
+    install(
+        InstallRequest::explicit(["git"], false, Platform::Linux),
+        InstallContext {
+            platform: &fixture.ops,
+            runner: &runner,
+            http: &fixture.http,
+            terminal: &mut terminal,
+            timestamp: &fixture.timestamp,
+        },
+    )
+    .unwrap();
+    assert!(runner.package_log().is_empty());
+    assert!(fixture.target(".gitconfig").is_file());
+    assert!(ModuleState::load(&fixture.ops.state_path().unwrap())
+        .unwrap()
+        .contains("git"));
+}
+
+#[test]
 fn provider_phase_precedes_dependent_package_phase() {
     let runner = FakeRunner::apt_without_mise_then_mise_after_install();
     let mut fixture = InstallFixture::new(Platform::Linux);
@@ -138,6 +283,83 @@ fn mise_does_not_implicitly_enable_powershell() {
     assert!(!fixture
         .target("Documents/PowerShell/Profile.d/10-mise.ps1")
         .exists());
+}
+
+#[test]
+fn mise_only_installs_activation_for_a_previously_applied_shell_without_reapplying_it() {
+    for (platform, shell, profile, activation, expected) in [
+        (
+            Platform::Linux,
+            "bash",
+            ".bashrc",
+            ".config/bashrc.d/10-mise.bash",
+            include_bytes!("../modules/mise/bash/10-mise.bash").as_slice(),
+        ),
+        (
+            Platform::Windows,
+            "powershell",
+            "Documents/PowerShell/Microsoft.PowerShell_profile.ps1",
+            "Documents/PowerShell/Profile.d/10-mise.ps1",
+            include_bytes!("../modules/mise/powershell/10-mise.ps1").as_slice(),
+        ),
+    ] {
+        let runner = FakeRunner::available(["apt", "dpkg-query", "run0", "apt-get", "winget"]);
+        let mut fixture = InstallFixture::new(platform);
+        install(
+            InstallRequest::explicit([shell], true, platform),
+            test_context(&mut fixture, &runner),
+        )
+        .unwrap();
+        fs::write(fixture.target(profile), b"keep customized shell profile").unwrap();
+        assert!(!fixture.target(activation).exists());
+
+        install(
+            InstallRequest::explicit(["mise"], true, platform),
+            test_context(&mut fixture, &runner),
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(fixture.target(activation)).unwrap(), expected);
+        assert!(!fixture.target(activation).is_symlink());
+        assert_eq!(
+            fs::read(fixture.target(profile)).unwrap(),
+            b"keep customized shell profile"
+        );
+        let state = ModuleState::load(&fixture.ops.state_path().unwrap()).unwrap();
+        assert!(state.contains(shell));
+        assert!(state.contains("mise"));
+        assert_eq!(
+            fixture
+                .terminal
+                .lines()
+                .iter()
+                .filter(|line| { **line == format!("completed module: {shell}") })
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn mise_only_does_not_enable_bash_without_a_recorded_shell() {
+    let runner = FakeRunner::available(["apt", "dpkg-query", "run0", "apt-get"]);
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    fs::write(fixture.target(".bashrc"), b"unmanaged bash profile").unwrap();
+    for _ in 0..2 {
+        install(
+            InstallRequest::explicit(["mise"], true, Platform::Linux),
+            test_context(&mut fixture, &runner),
+        )
+        .unwrap();
+        assert!(!fixture.target(".config/bashrc.d/10-mise.bash").exists());
+        let state = ModuleState::load(&fixture.ops.state_path().unwrap()).unwrap();
+        assert!(state.contains("mise"));
+        assert!(!state.contains("bash"));
+    }
+    assert_eq!(
+        fs::read(fixture.target(".bashrc")).unwrap(),
+        b"unmanaged bash profile"
+    );
 }
 
 #[test]
@@ -266,6 +488,7 @@ fn empty_selection_is_successful_noop() {
     )
     .unwrap();
     assert!(runner.calls().is_empty());
+    assert!(!fixture.ops.state_path().unwrap().parent().unwrap().exists());
 }
 
 #[test]

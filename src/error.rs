@@ -20,6 +20,8 @@ pub enum InstallError {
     Mapping(String),
     #[error("asset error: {0}")]
     Asset(String),
+    #[error("module state error: {0}")]
+    State(String),
     #[error(transparent)]
     Io(#[from] io::Error),
 }
@@ -55,6 +57,7 @@ impl InstallError {
             | Self::Setup(_)
             | Self::Mapping(_)
             | Self::Asset(_)
+            | Self::State(_)
             | Self::Io(_) => ExitCategory::Operational,
         }
     }

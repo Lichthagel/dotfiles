@@ -214,13 +214,20 @@ pub fn install_with_registry(
 
     let resolved =
         resolve_modules_from_registry(&request.modules, request.platform, context.runner, modules)?;
-    let resolved_ids = resolved
+    let phases = ordered_phases(&resolved)?;
+    let mut state = crate::state::StateStore::open(context.platform)?;
+    // Applied modules satisfy mapping gates without joining the installation plan.
+    let mapping_modules = modules
         .iter()
+        .filter(|module| {
+            module.supports(request.platform)
+                && (state.contains(module.id)
+                    || resolved.iter().any(|selected| selected.id == module.id))
+        })
         .map(|module| module.id.to_owned())
         .collect::<Vec<_>>();
-
     let mut side_effects_started = false;
-    for phase in ordered_phases(&resolved)? {
+    for phase in phases {
         let mut package_plan =
             build_package_plan(context.runner, request.platform, &phase, request.yes)?;
         if !request.yes {
@@ -289,9 +296,19 @@ pub fn install_with_registry(
         side_effects_started = true;
         run_setup(module.setup, &setup_context)
             .map_err(|error| InstallError::Setup(format!("{}: {error}", module.id)))?;
-        let backups =
-            apply_module_mappings(context.platform, module, &resolved_ids, context.timestamp)
-                .map_err(|error| InstallError::Mapping(format!("{}: {error}", module.id)))?;
+        let backups = apply_module_mappings(
+            context.platform,
+            module,
+            &mapping_modules,
+            context.timestamp,
+        )
+        .map_err(|error| InstallError::Mapping(format!("{}: {error}", module.id)))?;
+        state.record(module.id).map_err(|error| {
+            InstallError::State(format!(
+                "could not record completed module {}: {error}",
+                module.id
+            ))
+        })?;
         for backup in backups {
             if let Some(path) = backup.backup {
                 context.terminal.write_line(&format!(

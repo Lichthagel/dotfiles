@@ -79,6 +79,13 @@ pub trait PlatformOps {
     fn backup_root(&self) -> Result<PathBuf> {
         Ok(self.path_context().backup_root.clone())
     }
+    fn state_path(&self) -> Result<PathBuf> {
+        let backup_root = self.backup_root()?;
+        let root = backup_root.parent().ok_or_else(|| {
+            InstallError::State("backup directory has no parent for module state".into())
+        })?;
+        Ok(root.join("state.json"))
+    }
     fn resolve_target(&self, target: Target) -> Result<PathBuf> {
         resolve_target_in_context(self.path_context(), target)
     }

@@ -8,6 +8,7 @@ use crate::error::{InstallError, Result};
 use crate::model::{PackageManager, Platform};
 use crate::packages::PackagePlan;
 use crate::registry::{self, ModuleSpec};
+use crate::state::ModuleState;
 use zeroize::Zeroizing;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -291,6 +292,14 @@ pub fn select_modules(
     modules: &[&'static ModuleSpec],
     terminal: &mut dyn TerminalIo,
 ) -> Result<Vec<String>> {
+    select_modules_with_state(modules, &ModuleState::default(), terminal)
+}
+
+pub fn select_modules_with_state(
+    modules: &[&'static ModuleSpec],
+    state: &ModuleState,
+    terminal: &mut dyn TerminalIo,
+) -> Result<Vec<String>> {
     require_interactive(terminal)?;
     let _raw_mode = terminal.enter_raw_mode()?;
     if modules.is_empty() {
@@ -303,7 +312,7 @@ pub fn select_modules(
         .collect::<Vec<_>>();
     let mut cursor = 0usize;
     loop {
-        render_modules(modules, &selected, cursor, terminal)?;
+        render_modules(modules, state, &selected, cursor, terminal)?;
         match terminal.read_key()? {
             TerminalKey::Up => cursor = cursor.saturating_sub(1),
             TerminalKey::Down => cursor = (cursor + 1).min(modules.len() - 1),
@@ -326,6 +335,7 @@ pub fn select_modules(
 
 fn render_modules(
     modules: &[&'static ModuleSpec],
+    state: &ModuleState,
     selected: &[bool],
     cursor: usize,
     terminal: &mut dyn TerminalIo,
@@ -336,8 +346,13 @@ fn render_modules(
     for (index, module) in modules.iter().enumerate() {
         let pointer = if index == cursor { '>' } else { ' ' };
         let marker = if selected[index] { 'x' } else { ' ' };
+        let status = if state.contains(module.id) {
+            " (previously applied)"
+        } else {
+            ""
+        };
         terminal.write_line(&format!(
-            "{pointer} [{marker}] {} - {}",
+            "{pointer} [{marker}] {} - {}{status}",
             module.id, module.description
         ))?;
     }

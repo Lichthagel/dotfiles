@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use clap::Parser;
 use dotfiles::cli::{
-    parse_modules, select_modules, select_packages, validate_modules, Cli, CrosstermTerminal,
-    PackageSelection, TerminalIo, TerminalKey,
+    parse_modules, select_modules, select_modules_with_state, select_packages, validate_modules,
+    Cli, CrosstermTerminal, PackageSelection, TerminalIo, TerminalKey,
 };
 use dotfiles::error::{ExitCategory, InstallError};
 use dotfiles::model::{PackageManager, Platform};
@@ -106,6 +106,32 @@ fn default_module_selection_and_enter_confirm_selected_defaults() {
     let selected = select_modules(&modules, &mut terminal).unwrap();
     assert_eq!(selected, ["git", "bash", "mise"]);
     assert!(terminal.output.contains("git - Git configuration"));
+}
+
+#[test]
+fn previously_applied_modules_are_labeled_without_changing_selection_defaults() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("state.json");
+    std::fs::write(
+        &path,
+        r#"{"schema_version":1,"modules":["git","atuin","removed-module"]}"#,
+    )
+    .unwrap();
+    let state = dotfiles::state::ModuleState::load(&path).unwrap();
+    let modules = dotfiles::cli::supported_modules(Platform::Linux);
+    let mut terminal = FakeTerminal::interactive([TerminalKey::Enter]);
+    let selected = select_modules_with_state(&modules, &state, &mut terminal).unwrap();
+    assert_eq!(selected, ["git", "bash", "mise"]);
+    assert!(terminal
+        .output
+        .contains("[x] git - Git configuration (previously applied)"));
+    assert!(terminal
+        .output
+        .contains("[ ] atuin - Atuin shell history (previously applied)"));
+    assert!(!terminal.output.contains("removed-module"));
+    assert!(!terminal
+        .output
+        .contains("Bash profile (previously applied)"));
 }
 
 #[test]

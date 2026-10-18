@@ -33,14 +33,54 @@ cargo run -- --modules git,powershell,mise --yes
 plan without prompting; unattended setup still requires explicit module
 selection. Use `--list` to list modules supported by the current binary.
 
-Shell integration requires selecting the corresponding shell module as well:
-`bash` on Linux or `powershell` on Windows. These requirements gate integration
-files rather than implicitly selecting modules. For example, selecting only
-`atuin` performs package/login setup without installing its shell integration.
+Shell integration requires the corresponding shell module to be selected in
+this run or recorded as previously applied: `bash` on Linux or `powershell` on
+Windows. These requirements gate integration files rather than implicitly
+selecting or rerunning shell modules. For example, `--modules mise` copies the
+Bash activation script when `bash` is already recorded, without replacing
+`~/.bashrc`. If the shell module is neither selected nor recorded, shell
+integration is skipped. Existing shell files alone do not satisfy this gate.
 
 Existing targets are backed up before replacement, and embedded configuration
 assets are installed as regular files. See the [README](../README.md) for
 package-manager priority and Atuin/OpenCode credential setup.
+
+## Applied Module State
+
+After each module's setup and file mappings succeed, the installer records its
+ID in a local JSON file. Completed modules remain recorded if a later module
+fails. The interactive checklist labels these modules as `previously applied`;
+this does not change default selections or prevent explicitly selected modules
+from running again. Previously applied modules also satisfy mapping requirements
+for selected modules, such as mise's shell activation, without being rerun.
+
+The state file lives beside the backup directory:
+
+- Linux: `$XDG_STATE_HOME/dotfiles/state.json`, falling back to
+  `~/.local/state/dotfiles/state.json`.
+- Windows: `%LOCALAPPDATA%\dotfiles\state.json`, falling back to
+  `~\AppData\Local\dotfiles\state.json`.
+
+```json
+{
+  "schema_version": 1,
+  "modules": ["bash", "git", "mise"]
+}
+```
+
+`schema_version` describes the file format only. There are no timestamps,
+installer versions, or outdated checks. Entries mean the module was previously
+applied, not that its packages or files are still present. Modules are recorded
+even when package installation is intentionally skipped, as long as setup and
+mappings succeed. Existing entries are retained on failed reruns.
+
+State updates use atomic replacement. An OS-managed lock on the adjacent
+`state.lock` file prevents concurrent installations from overwriting state and
+is released when the installer exits. Invalid or unsupported state causes an
+error before installation changes rather than silently discarding records.
+State files are local to the user and should not be committed.
+
+## OpenCode Theme Downloads
 
 OpenCode theme downloads require the installed `curl` executable (`curl.exe`
 on Windows). Curl runs directly, without a shell, using its TLS backend and

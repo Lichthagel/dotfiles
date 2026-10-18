@@ -2,6 +2,7 @@ use std::io::{self, IsTerminal, Write};
 
 use clap::Parser;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::style::Stylize;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 
 use crate::error::{InstallError, Result};
@@ -42,6 +43,15 @@ impl Drop for RawModeGuard {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MenuStyle {
+    Pointer,
+    Heading,
+    Selected,
+    FocusedSelected,
+    Normal,
+}
+
 pub trait TerminalIo {
     fn is_interactive(&self) -> bool;
     fn enter_raw_mode(&mut self) -> Result<RawModeGuard> {
@@ -66,18 +76,27 @@ pub trait TerminalIo {
     }
     fn clear(&mut self) -> Result<()>;
     fn write_line(&mut self, line: &str) -> Result<()>;
+    fn write_menu_line(&mut self, line: &str, _style: MenuStyle) -> Result<()> {
+        self.write_line(line)
+    }
+    fn write_menu_item(&mut self, pointer: char, line: &str, _style: MenuStyle) -> Result<()> {
+        self.write_line(&format!("{pointer}{line}"))
+    }
 }
 
 pub struct CrosstermTerminal<'a> {
     output: &'a mut dyn Write,
     interactive: bool,
+    color_enabled: bool,
 }
 
 impl<'a> CrosstermTerminal<'a> {
     pub fn new(output: &'a mut dyn Write) -> Self {
+        let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
         Self {
             output,
-            interactive: io::stdin().is_terminal() && io::stdout().is_terminal(),
+            interactive,
+            color_enabled: interactive && std::env::var_os("NO_COLOR").is_none(),
         }
     }
 }
@@ -160,6 +179,38 @@ impl TerminalIo for CrosstermTerminal<'_> {
     fn write_line(&mut self, line: &str) -> Result<()> {
         write!(self.output, "{line}\r\n").map_err(InstallError::Io)?;
         self.output.flush().map_err(InstallError::Io)
+    }
+
+    fn write_menu_line(&mut self, line: &str, style: MenuStyle) -> Result<()> {
+        if !self.color_enabled {
+            return self.write_line(line);
+        }
+
+        write_styled_menu_text(self.output, line, style).map_err(InstallError::Io)?;
+        write!(self.output, "\r\n").map_err(InstallError::Io)?;
+        self.output.flush().map_err(InstallError::Io)
+    }
+
+    fn write_menu_item(&mut self, pointer: char, line: &str, style: MenuStyle) -> Result<()> {
+        if !self.color_enabled {
+            return self.write_line(&format!("{pointer}{line}"));
+        }
+
+        write_styled_menu_text(self.output, &pointer.to_string(), MenuStyle::Pointer)
+            .map_err(InstallError::Io)?;
+        write_styled_menu_text(self.output, line, style).map_err(InstallError::Io)?;
+        write!(self.output, "\r\n").map_err(InstallError::Io)?;
+        self.output.flush().map_err(InstallError::Io)
+    }
+}
+
+fn write_styled_menu_text(output: &mut dyn Write, line: &str, style: MenuStyle) -> io::Result<()> {
+    match style {
+        MenuStyle::Pointer => write!(output, "{}", line.magenta().bold()),
+        MenuStyle::Heading => write!(output, "{}", line.cyan().bold()),
+        MenuStyle::Selected => write!(output, "{}", line.green()),
+        MenuStyle::FocusedSelected => write!(output, "{}", line.green().bold()),
+        MenuStyle::Normal => write!(output, "{line}"),
     }
 }
 
@@ -341,8 +392,10 @@ fn render_modules(
     terminal: &mut dyn TerminalIo,
 ) -> Result<()> {
     terminal.clear()?;
-    terminal
-        .write_line("Select applications (Up/Down to move, Space to toggle, Enter to confirm):")?;
+    terminal.write_menu_line(
+        "Select applications (Up/Down to move, Space to toggle, Enter to confirm):",
+        MenuStyle::Heading,
+    )?;
     for (index, module) in modules.iter().enumerate() {
         let pointer = if index == cursor { '>' } else { ' ' };
         let marker = if selected[index] { 'x' } else { ' ' };
@@ -351,10 +404,12 @@ fn render_modules(
         } else {
             ""
         };
-        terminal.write_line(&format!(
-            "{pointer} [{marker}] {} - {}{status}",
-            module.id, module.description
-        ))?;
+        let style = menu_item_style(index == cursor, selected[index]);
+        terminal.write_menu_item(
+            pointer,
+            &format!(" [{marker}] {} - {}{status}", module.id, module.description),
+            style,
+        )?;
     }
     Ok(())
 }
@@ -413,19 +468,33 @@ pub fn select_packages(
 
 fn render_packages(plan: &PackagePlan, cursor: usize, terminal: &mut dyn TerminalIo) -> Result<()> {
     terminal.clear()?;
-    terminal.write_line(
+    terminal.write_menu_line(
         "Package plan (Up/Down move, Left/Right manager, Space toggle, Enter install, b back):",
+        MenuStyle::Heading,
     )?;
     for (index, action) in plan.actions.iter().enumerate() {
         let pointer = if index == cursor { '>' } else { ' ' };
         let marker = if action.selected { 'x' } else { ' ' };
-        terminal.write_line(&format!(
-            "{pointer} [{marker}] {} -> {}",
-            action.logical,
-            action.manager.label()
-        ))?;
+        let style = menu_item_style(index == cursor, action.selected);
+        terminal.write_menu_item(
+            pointer,
+            &format!(
+                " [{marker}] {} -> {}",
+                action.logical,
+                action.manager.label()
+            ),
+            style,
+        )?;
     }
     Ok(())
+}
+
+fn menu_item_style(focused: bool, selected: bool) -> MenuStyle {
+    match (focused, selected) {
+        (true, true) => MenuStyle::FocusedSelected,
+        (false, true) => MenuStyle::Selected,
+        (_, false) => MenuStyle::Normal,
+    }
 }
 
 fn require_interactive(terminal: &dyn TerminalIo) -> Result<()> {
@@ -462,10 +531,23 @@ pub fn package_manager_options(plan: &PackagePlan, logical: &str) -> Vec<Package
 
 #[cfg(test)]
 mod tests {
-    use super::parse_modules;
+    use super::{menu_item_style, parse_modules, write_styled_menu_text, MenuStyle};
 
     #[test]
     fn blank_module_list_is_a_successful_noop() {
         assert!(parse_modules(" ").unwrap().is_empty());
+    }
+
+    #[test]
+    fn focused_unselected_rows_are_plain_and_the_pointer_is_purple() {
+        assert_eq!(menu_item_style(true, false), MenuStyle::Normal);
+
+        let mut output = Vec::new();
+        write_styled_menu_text(&mut output, ">", MenuStyle::Pointer).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(
+            output.contains("\x1b[38;5;13m"),
+            "unexpected styling: {output:?}"
+        );
     }
 }

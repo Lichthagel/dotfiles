@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use clap::Parser;
 use dotfiles::cli::{
     parse_modules, select_modules, select_modules_with_state, select_packages, validate_modules,
-    Cli, CrosstermTerminal, PackageSelection, TerminalIo, TerminalKey,
+    Cli, CrosstermTerminal, MenuStyle, PackageSelection, TerminalIo, TerminalKey,
 };
 use dotfiles::error::{ExitCategory, InstallError};
 use dotfiles::model::{PackageManager, Platform};
@@ -15,6 +15,7 @@ struct FakeTerminal {
     interactive: bool,
     keys: Vec<TerminalKey>,
     output: String,
+    menu_styles: Vec<MenuStyle>,
 }
 
 impl FakeTerminal {
@@ -23,6 +24,7 @@ impl FakeTerminal {
             interactive: true,
             keys: keys.into_iter().collect(),
             output: String::new(),
+            menu_styles: Vec::new(),
         }
     }
 
@@ -58,6 +60,22 @@ impl TerminalIo for FakeTerminal {
         self.output.push_str(line);
         self.output.push('\n');
         Ok(())
+    }
+
+    fn write_menu_line(&mut self, line: &str, style: MenuStyle) -> dotfiles::error::Result<()> {
+        self.menu_styles.push(style);
+        self.write_line(line)
+    }
+
+    fn write_menu_item(
+        &mut self,
+        pointer: char,
+        line: &str,
+        style: MenuStyle,
+    ) -> dotfiles::error::Result<()> {
+        self.menu_styles.push(MenuStyle::Pointer);
+        self.menu_styles.push(style);
+        self.write_line(&format!("{pointer}{line}"))
     }
 }
 
@@ -106,6 +124,12 @@ fn default_module_selection_and_enter_confirm_selected_defaults() {
     let selected = select_modules(&modules, &mut terminal).unwrap();
     assert_eq!(selected, ["git", "bash", "zsh", "mise"]);
     assert!(terminal.output.contains("git - Git configuration"));
+    assert_eq!(terminal.menu_styles.first(), Some(&MenuStyle::Heading));
+    assert_eq!(terminal.menu_styles.get(1), Some(&MenuStyle::Pointer));
+    assert_eq!(
+        terminal.menu_styles.get(2),
+        Some(&MenuStyle::FocusedSelected)
+    );
 }
 
 #[test]

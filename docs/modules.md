@@ -19,7 +19,7 @@ explicit `--modules` selection installs only the requested modules.
 | `brew` | Linux | No | Sets up Homebrew as a package manager and provides optional Bash and Zsh integration. |
 | `scoop` | Windows | No | Sets up Scoop as a package manager and provides optional PowerShell integration. |
 | `atuin` | Linux, Windows | No | Installs Atuin shell history, provides optional shell integration, and configures sync login when credentials are available. |
-| `oh-my-posh` | Linux, Windows | No | Installs Oh My Posh, writes the shared prompt configuration, and provides optional shell integration. |
+| `oh-my-posh` | Linux, Windows | No | Installs Oh My Posh, writes its configuration to `~/.config/oh-my-posh/config.json` on Linux or beside the PowerShell profile on Windows, and provides optional shell integration. |
 | `opencode` | Linux, Windows | No | Installs and configures OpenCode, fetches themes, and optionally configures provider credentials. |
 
 ## Selecting Modules

@@ -2,6 +2,22 @@
 
 ## Test Requirements
 
+Linux builds require `pkg-config`, OpenSSL development headers/libraries, and
+system CA certificates. Install them before running Cargo:
+
+```sh
+# Debian/Ubuntu
+sudo apt-get install pkg-config libssl-dev ca-certificates
+# Fedora
+sudo dnf install pkgconf-pkg-config openssl-devel ca-certificates
+```
+
+Windows uses Schannel and the system certificate store; no OpenSSL development
+package is needed. Linux artifacts dynamically link to the build machine's
+OpenSSL ABI, so verify runtime compatibility when distributing local builds.
+Do not enable vendored OpenSSL just to avoid installing build dependencies;
+that would put the TLS implementation back into the executable.
+
 Run the complete local Rust matrix before opening a change:
 
 ```sh
@@ -64,6 +80,32 @@ user-local credential files, JSON/JSONC idempotency, the
 and latest Catppuccin theme fetching with staged failure-safe updates.
 
 ## Release and Bootstrap Changes
+
+Release builds use size optimization (`opt-level = "z"`), full LTO, a single
+codegen unit, and symbol stripping, as configured in `Cargo.toml`. Panic
+unwinding remains enabled so terminal and secret guards can run their destructors.
+Clap retains help, usage, and error context without optional color or typo
+suggestions. HTTP downloads use synchronous `ureq` with native TLS and the
+system certificate store (OpenSSL on Linux, Schannel on Windows), with no
+optional compression or JSON features. Certificate and hostname verification
+remain enabled; JSON validation stays in `serde_json`.
+
+Build and compare native release artifacts when changing these settings or
+network dependencies:
+
+```sh
+cargo build --release --locked --target x86_64-unknown-linux-gnu
+```
+
+```powershell
+cargo build --release --locked --target x86_64-pc-windows-msvc
+```
+
+Compare `opt-level = "s"` against `"z"` rather than assuming `"z"` is smaller;
+`"z"` was selected after measuring the smaller Linux artifact. Recheck both
+platforms when changing toolchains or dependencies. Keep the embedded
+configuration and age bundles intact, and do not use executable packers as a
+substitute for compiler and dependency size reductions.
 
 The Linux and Windows bootstrap helpers are delivery transport only. They must
 download the current artifacts from `https://r2.licht.moe/dotfiles/`, select the

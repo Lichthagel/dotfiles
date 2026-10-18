@@ -41,3 +41,10 @@ files rather than implicitly selecting modules. For example, selecting only
 Existing targets are backed up before replacement, and embedded configuration
 assets are installed as regular files. See the [README](../README.md) for
 package-manager priority and Atuin/OpenCode credential setup.
+
+OpenCode theme downloads use a synchronous HTTP client with native TLS
+(OpenSSL on Linux, Schannel on Windows) and the system certificate store.
+Certificate and hostname verification remain enabled. Requests have a 10-second
+connection timeout, a 60-second total request timeout, and a maximum of 10 redirects. Theme-tree and individual theme responses are limited
+to 1 MiB each, including responses without a declared content length. Downloaded
+JSON is validated before managed outputs are replaced.

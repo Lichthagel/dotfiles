@@ -23,7 +23,7 @@ use engine::{install, InstallContext};
 use error::{InstallError, Result};
 use packages::SystemCommandRunner;
 use platform::{default_platform_ops, platform_from_cfg, SystemTimestamp};
-use setup::http::ReqwestHttpClient;
+use setup::http::UreqHttpClient;
 
 pub fn run<I, T>(args: I, io: &mut dyn Write) -> Result<()>
 where
@@ -55,7 +55,7 @@ where
     let mut terminal = CrosstermTerminal::new(io);
     let platform_ops = default_platform_ops()?;
     let runner = SystemCommandRunner;
-    let http = ReqwestHttpClient::new()?;
+    let http = UreqHttpClient::new();
     let timestamp = SystemTimestamp;
 
     loop {

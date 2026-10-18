@@ -662,6 +662,9 @@ pub fn build_package_plan(
     let mut alternatives = BTreeMap::new();
     let mut actions = Vec::new();
     for (logical, candidates) in candidates_by_logical {
+        if runner.available(&logical) {
+            continue;
+        }
         let available = candidates
             .into_iter()
             .filter(|candidate| {

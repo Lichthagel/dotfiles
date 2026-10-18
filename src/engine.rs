@@ -92,6 +92,9 @@ impl<'a, 'r> Resolver<'a, 'r> {
             .map(|package| package.logical)
             .collect::<BTreeSet<_>>();
         for logical in logical_names {
+            if self.runner.available(logical) {
+                continue;
+            }
             let candidates = module.packages.iter().filter(|package| {
                 package.logical == logical && package.manager.is_supported_on(self.platform)
             });

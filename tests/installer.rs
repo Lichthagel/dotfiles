@@ -133,6 +133,48 @@ fn git_installs_before_mapping() {
 }
 
 #[test]
+fn existing_commands_allow_dotfiles_without_a_package_manager() {
+    for platform in [Platform::Linux, Platform::Windows] {
+        for yes in [false, true] {
+            let runner = FakeRunner::available(["git"]);
+            let mut fixture = InstallFixture::new(platform);
+            install(
+                InstallRequest::explicit(["git"], yes, platform),
+                test_context(&mut fixture, &runner),
+            )
+            .unwrap();
+
+            assert!(runner.calls().is_empty());
+            assert_eq!(runner.refresh_count(), 0);
+            assert_eq!(
+                fs::read(fixture.target(".gitconfig")).unwrap(),
+                include_bytes!("../modules/git/gitconfig")
+            );
+            let state = ModuleState::load(&fixture.ops.state_path().unwrap()).unwrap();
+            assert!(state.contains("git"));
+            assert!(!state.contains("mise"));
+            assert!(!state.contains("scoop"));
+        }
+    }
+}
+
+#[test]
+fn existing_commands_do_not_resolve_package_manager_providers() {
+    let runner = FakeRunner::available(["consumer"]);
+    let resolved = resolve_modules_from_registry(
+        &["test-mise-consumer".into()],
+        Platform::Linux,
+        &runner,
+        TEST_MODULES,
+    )
+    .unwrap();
+    assert_eq!(
+        resolved.iter().map(|module| module.id).collect::<Vec<_>>(),
+        ["test-mise-consumer"]
+    );
+}
+
+#[test]
 fn converged_rerun_does_not_reinstall_or_rewrite_module_outputs() {
     let runner = FakeRunner::available(["git", "apt", "dpkg-query", "run0", "apt-get"]);
     let mut fixture = InstallFixture::new(Platform::Linux);
@@ -158,8 +200,7 @@ fn converged_rerun_does_not_reinstall_or_rewrite_module_outputs() {
     let backup_root = fixture.ops.backup_root().unwrap();
     let backup_count = count_files(&backup_root);
     let installed_packages = runner.package_log();
-    assert!(installed_packages.contains(&"git".into()));
-    assert!(installed_packages.contains(&"mise".into()));
+    assert_eq!(installed_packages, ["mise"]);
 
     runner.mark_installed("apt", "git");
     runner.mark_installed("apt", "mise");

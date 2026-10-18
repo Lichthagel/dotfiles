@@ -239,6 +239,28 @@ fn installed_logical_packages_are_not_planned() {
 }
 
 #[test]
+fn available_commands_are_not_planned_or_queried() {
+    for platform in [Platform::Linux, Platform::Windows] {
+        for id in ["git", "mise", "atuin", "oh-my-posh", "opencode"] {
+            for programs in [vec![id], vec![id, "apt", "winget", "brew", "mise"]] {
+                let runner = FakeRunner::available(programs);
+                let plan = build_package_plan(&runner, platform, &[module(id)], true).unwrap();
+                assert!(plan.actions().is_empty(), "{id} on {platform:?}");
+                assert!(plan.alternatives.is_empty());
+                assert!(runner.calls().is_empty());
+            }
+        }
+    }
+}
+
+#[test]
+fn similarly_named_commands_do_not_suppress_packages() {
+    let runner = FakeRunner::available(["apt", "git-lfs"]);
+    let plan = build_package_plan(&runner, Platform::Linux, &[module("git")], true).unwrap();
+    assert_eq!(plan.actions()[0].logical, "git");
+}
+
+#[test]
 fn no_available_candidate_lists_supported_managers() {
     let runner = FakeRunner::available(std::iter::empty::<&str>());
     let error = build_package_plan(&runner, Platform::Linux, &[module("git")], true)

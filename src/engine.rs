@@ -82,15 +82,7 @@ impl<'a, 'r> Resolver<'a, 'r> {
         self.states.insert(id.to_owned(), VisitState::Visiting);
         self.stack.push(id.to_owned());
 
-        let mut dependencies = module.requires.to_vec();
-        dependencies.extend(
-            module
-                .mappings
-                .iter()
-                .filter(|mapping| mapping.platform == self.platform)
-                .flat_map(|mapping| mapping.requires.iter().copied()),
-        );
-        for dependency in dependencies {
+        for dependency in module.requires.iter().copied() {
             self.resolve(dependency)?;
         }
 

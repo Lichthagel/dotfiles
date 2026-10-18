@@ -105,12 +105,13 @@ platform default identity path is used otherwise. No external `age` command or
 age package is required by the installer.
 
 Shell modules load numbered integration drop-ins from their platform-specific
-profile directories. Atuin's shell mapping declares its shell requirement, so
-selecting `atuin` resolves the platform shell module and installs the matching
-profile drop-in automatically. Use `--modules bash,atuin` on Linux or
-`--modules powershell,atuin` on Windows when selecting the shell explicitly;
-selecting only `atuin` still performs package/login setup and its required shell
-integration.
+profile directories. Mapping requirements are gates, not implicit module
+selections: a drop-in is installed only when both its module and required shell
+module are selected. Use `--modules bash,atuin` on Linux or
+`--modules powershell,atuin` on Windows to install Atuin with its shell
+integration; selecting only `atuin` still performs package/login setup. On
+Windows, use `--modules mise,powershell` to install mise with its activation
+drop-in; selecting only `mise` does not enable the PowerShell profile.
 
 ### OpenCode
 

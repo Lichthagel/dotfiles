@@ -120,6 +120,46 @@ fn provider_phase_precedes_dependent_package_phase() {
 }
 
 #[test]
+fn mise_does_not_implicitly_enable_powershell() {
+    let runner = FakeRunner::available(["winget"]);
+    let mut fixture = InstallFixture::new(Platform::Windows);
+    install(
+        InstallRequest::explicit(["mise"], true, Platform::Windows),
+        test_context(&mut fixture, &runner),
+    )
+    .unwrap();
+
+    assert!(runner.calls().iter().any(|call| {
+        call.program == "winget" && call.args.iter().any(|argument| argument == "jdx.mise")
+    }));
+    assert!(!fixture
+        .target("Documents/PowerShell/Microsoft.PowerShell_profile.ps1")
+        .exists());
+    assert!(!fixture
+        .target("Documents/PowerShell/Profile.d/10-mise.ps1")
+        .exists());
+}
+
+#[test]
+fn selecting_mise_with_powershell_installs_its_activation_dropin() {
+    let runner = FakeRunner::available(["winget"]);
+    let mut fixture = InstallFixture::new(Platform::Windows);
+    install(
+        InstallRequest::explicit(["mise", "powershell"], true, Platform::Windows),
+        test_context(&mut fixture, &runner),
+    )
+    .unwrap();
+
+    assert!(fixture
+        .target("Documents/PowerShell/Microsoft.PowerShell_profile.ps1")
+        .is_file());
+    assert_eq!(
+        fs::read(fixture.target("Documents/PowerShell/Profile.d/10-mise.ps1")).unwrap(),
+        include_bytes!("../modules/mise/powershell/10-mise.ps1")
+    );
+}
+
+#[test]
 fn refresh_makes_provider_available_to_dependent_phase() {
     let runner =
         FakeRunner::available(["apt", "dpkg-query", "run0", "apt-get"]).refresh_adds("mise");
@@ -156,9 +196,20 @@ fn refresh_failure_identifies_the_current_package_and_module() {
 }
 
 #[test]
-fn required_shell_module_is_resolved_before_prompt_integration() {
+fn shell_prerequisites_are_not_implicitly_resolved_but_order_explicit_modules() {
     let runner = FakeRunner::available(["apt", "dpkg-query", "run0", "apt-get"]);
     let resolved = resolve_modules(&["oh-my-posh".into()], Platform::Linux, &runner).unwrap();
+    assert_eq!(
+        resolved.iter().map(|module| module.id).collect::<Vec<_>>(),
+        ["oh-my-posh"]
+    );
+
+    let resolved = resolve_modules(
+        &["oh-my-posh".into(), "bash".into()],
+        Platform::Linux,
+        &runner,
+    )
+    .unwrap();
     let phases = ordered_phases(&resolved).unwrap();
     let ids: Vec<_> = phases.iter().map(|phase| phase[0].id).collect();
     assert_eq!(ids, ["bash", "oh-my-posh"]);

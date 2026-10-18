@@ -128,7 +128,9 @@ fn existing_homebrew_install_is_rediscovered_and_path_is_not_duplicated() {
     let old_prefix = std::env::var_os("DOTFILES_HOMEBREW_PREFIX");
     let old_path = std::env::var_os("PATH");
     std::env::set_var("DOTFILES_HOMEBREW_PREFIX", &prefix);
-    std::env::set_var("PATH", "/usr/bin:/usr/bin");
+    let initial_path =
+        std::env::join_paths([PathBuf::from("/usr/bin"), PathBuf::from("/usr/bin")]).unwrap();
+    std::env::set_var("PATH", initial_path);
 
     let runner = CloneRunner::new(&["git"]);
     let fixture = MappingFixture::with_platform(Platform::Linux);

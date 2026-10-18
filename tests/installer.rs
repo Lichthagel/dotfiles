@@ -28,6 +28,11 @@ static TEST_CONSUMER_PACKAGES: &[PackageSpec] = &[PackageSpec {
     name: "consumer",
 }];
 static TEST_NO_MAPPINGS: &[MappingSpec] = &[];
+static UNAVAILABLE_GIT_PACKAGES: &[PackageSpec] = &[PackageSpec {
+    logical: "git",
+    manager: PackageManager::Apt,
+    name: "git",
+}];
 static TEST_PROVIDER: ModuleSpec = ModuleSpec {
     id: "test-mise-provider",
     description: "test mise provider",
@@ -562,9 +567,15 @@ fn bash_and_prompt_assets_are_materialized_as_regular_files() {
 fn unavailable_managers_fail_before_mapping() {
     let runner = FakeRunner::available(std::iter::empty::<&str>());
     let mut fixture = InstallFixture::new(Platform::Linux);
-    let error = install(
+    let git = *dotfiles::registry::find_module("git").unwrap();
+    let modules = [ModuleSpec {
+        packages: UNAVAILABLE_GIT_PACKAGES,
+        ..git
+    }];
+    let error = install_with_registry(
         InstallRequest::explicit(["git"], true, Platform::Linux),
         test_context(&mut fixture, &runner),
+        &modules,
     )
     .unwrap_err();
     assert!(error.to_string().contains("git"));

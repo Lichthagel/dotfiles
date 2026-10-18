@@ -1,0 +1,7 @@
+# >>> dotfiles managed zsh section >>>
+export EDITOR="${EDITOR:-vi}"
+
+for file in "$HOME/.config/zshrc.d/"*.zsh(N); do
+    [[ -r "$file" ]] && source "$file"
+done
+# <<< dotfiles managed zsh section <<<

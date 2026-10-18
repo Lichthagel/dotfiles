@@ -1,0 +1,358 @@
+use dotfiles::model::{PackageManager, Platform, Target};
+use dotfiles::registry::{self, MappingBehavior};
+
+#[test]
+fn registry_contains_only_supported_modules() {
+    let ids: Vec<_> = registry::modules().iter().map(|module| module.id).collect();
+    assert_eq!(
+        ids,
+        [
+            "git",
+            "bash",
+            "zsh",
+            "powershell",
+            "mise",
+            "brew",
+            "scoop",
+            "atuin",
+            "oh-my-posh",
+            "opencode",
+        ]
+    );
+}
+
+#[test]
+fn provider_and_secret_contracts_match_existing_modules() {
+    assert_eq!(
+        registry::find_module("brew").unwrap().provides,
+        Some(PackageManager::Brew)
+    );
+    assert_eq!(
+        registry::find_module("scoop").unwrap().provides,
+        Some(PackageManager::Scoop)
+    );
+    assert_eq!(
+        registry::find_module("mise").unwrap().provides,
+        Some(PackageManager::Mise)
+    );
+    assert!(registry::find_module("brew").unwrap().setup.is_some());
+    assert!(registry::find_module("scoop").unwrap().setup.is_some());
+    assert_eq!(
+        registry::find_module("atuin")
+            .unwrap()
+            .secret_bundle
+            .map(|bundle| bundle.name),
+        Some("Atuin")
+    );
+    assert_eq!(
+        registry::find_module("opencode")
+            .unwrap()
+            .secret_bundle
+            .map(|bundle| bundle.name),
+        Some("OpenCode")
+    );
+    assert!(registry::find_module("atuin").unwrap().setup.is_some());
+    assert!(registry::find_module("atuin")
+        .unwrap()
+        .secret_request
+        .is_some());
+    assert!(registry::find_module("opencode").unwrap().setup.is_some());
+    assert!(registry::find_module("opencode")
+        .unwrap()
+        .secret_request
+        .is_some());
+}
+
+#[test]
+fn platform_filtering_excludes_shell_specific_modules() {
+    assert!(registry::find_module("bash")
+        .unwrap()
+        .supports(Platform::Linux));
+    assert!(!registry::find_module("bash")
+        .unwrap()
+        .supports(Platform::Windows));
+    assert!(registry::find_module("zsh")
+        .unwrap()
+        .supports(Platform::Linux));
+    assert!(!registry::find_module("zsh")
+        .unwrap()
+        .supports(Platform::Windows));
+    assert!(registry::find_module("powershell")
+        .unwrap()
+        .supports(Platform::Windows));
+    assert!(!registry::find_module("powershell")
+        .unwrap()
+        .supports(Platform::Linux));
+}
+
+#[test]
+fn defaults_and_descriptions_match_current_modules() {
+    for module in ["git", "bash", "zsh", "powershell", "mise"] {
+        assert!(registry::find_module(module).unwrap().default_selected);
+    }
+    for module in ["brew", "scoop", "atuin", "oh-my-posh", "opencode"] {
+        assert!(!registry::find_module(module).unwrap().default_selected);
+    }
+    assert_eq!(
+        registry::find_module("git").unwrap().description,
+        "Git configuration"
+    );
+    assert_eq!(
+        registry::find_module("opencode").unwrap().description,
+        "OpenCode AI coding agent"
+    );
+}
+
+#[test]
+fn package_alternatives_are_preserved_without_jq_or_age() {
+    let git = registry::find_module("git").unwrap();
+    for (manager, name) in [
+        (PackageManager::Apt, "git"),
+        (PackageManager::Dnf, "git"),
+        (PackageManager::Pacman, "git"),
+        (PackageManager::Brew, "git"),
+        (PackageManager::Mise, "git"),
+        (PackageManager::Winget, "Git.Git"),
+        (PackageManager::Scoop, "git"),
+    ] {
+        assert!(git.packages.iter().any(|package| {
+            package.manager == manager && package.name == name && package.logical == "git"
+        }));
+    }
+
+    let atuin = registry::find_module("atuin").unwrap();
+    for (manager, name) in [
+        (PackageManager::Apt, "atuin"),
+        (PackageManager::Dnf, "atuin"),
+        (PackageManager::Pacman, "atuin"),
+        (PackageManager::Brew, "atuin"),
+        (PackageManager::Mise, "atuin"),
+        (PackageManager::Winget, "Atuinsh.Atuin"),
+        (PackageManager::Scoop, "atuin"),
+    ] {
+        assert!(atuin.packages.iter().any(|package| {
+            package.manager == manager && package.name == name && package.logical == "atuin"
+        }));
+    }
+
+    let oh_my_posh = registry::find_module("oh-my-posh").unwrap();
+    for (manager, name) in [
+        (PackageManager::Apt, "oh-my-posh"),
+        (PackageManager::Dnf, "oh-my-posh"),
+        (PackageManager::Pacman, "oh-my-posh"),
+        (PackageManager::Brew, "oh-my-posh"),
+        (PackageManager::Mise, "oh-my-posh"),
+        (PackageManager::Winget, "JanDeDobbeleer.OhMyPosh"),
+        (PackageManager::Scoop, "oh-my-posh"),
+    ] {
+        assert!(oh_my_posh.packages.iter().any(|package| {
+            package.manager == manager && package.name == name && package.logical == "oh-my-posh"
+        }));
+    }
+
+    let mise = registry::find_module("mise").unwrap();
+    for (manager, name) in [
+        (PackageManager::Apt, "mise"),
+        (PackageManager::Dnf, "mise"),
+        (PackageManager::Pacman, "mise"),
+        (PackageManager::Brew, "mise"),
+        (PackageManager::Winget, "jdx.mise"),
+        (PackageManager::Scoop, "mise"),
+    ] {
+        assert!(mise.packages.iter().any(|package| {
+            package.manager == manager && package.name == name && package.logical == "mise"
+        }));
+    }
+
+    let opencode = registry::find_module("opencode").unwrap();
+    assert!(opencode.packages.iter().any(|package| {
+        package.manager == PackageManager::Brew && package.name == "anomalyco/tap/opencode"
+    }));
+    assert!(opencode.packages.iter().any(|package| {
+        package.manager == PackageManager::Mise && package.name == "github:anomalyco/opencode"
+    }));
+    assert!(opencode
+        .packages
+        .iter()
+        .any(|package| package.manager == PackageManager::Scoop && package.name == "opencode"));
+    assert!(!registry::modules()
+        .iter()
+        .flat_map(|module| module.packages)
+        .any(|package| {
+            package.name == "jq" || package.name == "FiloSottile.age" || package.logical == "age"
+        }));
+}
+
+#[test]
+fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
+    let git = registry::find_module("git").unwrap();
+    assert!(git.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset.name == "git/gitconfig"
+            && mapping.target == Target::Home(".gitconfig")
+            && mapping.requires.is_empty()
+    }));
+    assert!(git.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Windows
+            && mapping.asset.name == "git/gitconfig"
+            && mapping.target == Target::Home(".gitconfig")
+            && mapping.requires.is_empty()
+    }));
+
+    let bash = registry::find_module("bash").unwrap();
+    assert!(bash.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset.name == "bash/bashrc"
+            && mapping.target == Target::Home(".bashrc")
+            && mapping.behavior
+                == MappingBehavior::ManagedSection {
+                    start: "# >>> dotfiles managed bash section >>>",
+                    end: "# <<< dotfiles managed bash section <<<",
+                }
+    }));
+
+    let zsh = registry::find_module("zsh").unwrap();
+    assert!(zsh.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset.name == "zsh/zshrc"
+            && mapping.target == Target::Home(".zshrc")
+            && mapping.behavior
+                == MappingBehavior::ManagedSection {
+                    start: "# >>> dotfiles managed zsh section >>>",
+                    end: "# <<< dotfiles managed zsh section <<<",
+                }
+    }));
+
+    let powershell = registry::find_module("powershell").unwrap();
+    assert!(powershell.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Windows
+            && mapping.asset.name == "powershell/profile.ps1"
+            && mapping.target == Target::ProfileFile
+            && mapping.behavior
+                == MappingBehavior::ManagedSection {
+                    start: "# >>> dotfiles managed powershell section >>>",
+                    end: "# <<< dotfiles managed powershell section <<<",
+                }
+    }));
+
+    let mise = registry::find_module("mise").unwrap();
+    assert!(mise.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset.name == "mise/bash/10-mise.bash"
+            && mapping.target == Target::Home(".config/bashrc.d/10-mise.bash")
+            && mapping.requires == ["bash"]
+    }));
+    assert!(mise.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset.name == "mise/zsh/10-mise.zsh"
+            && mapping.target == Target::Home(".config/zshrc.d/10-mise.zsh")
+            && mapping.requires == ["zsh"]
+    }));
+    assert!(mise.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Windows
+            && mapping.asset.name == "mise/powershell/10-mise.ps1"
+            && mapping.target == Target::ProfileSibling("Profile.d/10-mise.ps1")
+            && mapping.requires == ["powershell"]
+    }));
+
+    let brew = registry::find_module("brew").unwrap();
+    assert!(brew.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset.name == "brew/bash/05-brew.bash"
+            && mapping.target == Target::Home(".config/bashrc.d/05-brew.bash")
+            && mapping.requires == ["bash"]
+    }));
+    assert!(brew.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset.name == "brew/zsh/05-brew.zsh"
+            && mapping.target == Target::Home(".config/zshrc.d/05-brew.zsh")
+            && mapping.requires == ["zsh"]
+    }));
+    let scoop = registry::find_module("scoop").unwrap();
+    assert!(scoop.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Windows
+            && mapping.asset.name == "scoop/powershell/05-scoop.ps1"
+            && mapping.target == Target::ProfileSibling("Profile.d/05-scoop.ps1")
+            && mapping.requires == ["powershell"]
+    }));
+
+    let atuin = registry::find_module("atuin").unwrap();
+    assert!(atuin.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset.name == "atuin/bash/50-atuin.bash"
+            && mapping.target == Target::Home(".config/bashrc.d/50-atuin.bash")
+            && mapping.requires == ["bash"]
+    }));
+    assert!(atuin.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset.name == "atuin/zsh/50-atuin.zsh"
+            && mapping.target == Target::Home(".config/zshrc.d/50-atuin.zsh")
+            && mapping.requires == ["zsh"]
+    }));
+    assert!(atuin.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Windows
+            && mapping.asset.name == "atuin/powershell/50-atuin.ps1"
+            && mapping.target == Target::ProfileSibling("Profile.d/50-atuin.ps1")
+            && mapping.requires == ["powershell"]
+    }));
+
+    let oh_my_posh = registry::find_module("oh-my-posh").unwrap();
+    assert!(oh_my_posh.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset.name == "oh-my-posh/oh-my-posh.config.json"
+            && mapping.target == Target::Home(".config/oh-my-posh/config.json")
+            && mapping.requires.is_empty()
+    }));
+    assert!(oh_my_posh.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset.name == "oh-my-posh/bash/10-oh-my-posh.bash"
+            && mapping.target == Target::Home(".config/bashrc.d/10-oh-my-posh.bash")
+            && mapping.requires == ["bash"]
+    }));
+    assert!(oh_my_posh.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Linux
+            && mapping.asset.name == "oh-my-posh/zsh/10-oh-my-posh.zsh"
+            && mapping.target == Target::Home(".config/zshrc.d/10-oh-my-posh.zsh")
+            && mapping.requires == ["zsh"]
+    }));
+    assert!(oh_my_posh.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Windows
+            && mapping.asset.name == "oh-my-posh/oh-my-posh.config.json"
+            && mapping.target == Target::ProfileSibling("oh-my-posh.config.json")
+            && mapping.requires.is_empty()
+    }));
+    assert!(oh_my_posh.mappings.iter().any(|mapping| {
+        mapping.platform == Platform::Windows
+            && mapping.asset.name == "oh-my-posh/powershell/10-oh-my-posh.ps1"
+            && mapping.target == Target::ProfileSibling("Profile.d/10-oh-my-posh.ps1")
+            && mapping.requires == ["powershell"]
+    }));
+}
+
+#[test]
+fn package_manager_priority_matches_platforms() {
+    assert_eq!(
+        PackageManager::priority(Platform::Linux),
+        [
+            PackageManager::Apt,
+            PackageManager::Dnf,
+            PackageManager::Pacman,
+            PackageManager::Brew,
+            PackageManager::Mise,
+        ]
+    );
+    assert_eq!(
+        PackageManager::priority(Platform::Windows),
+        [
+            PackageManager::Winget,
+            PackageManager::Scoop,
+            PackageManager::Brew,
+            PackageManager::Mise,
+        ]
+    );
+}
+
+#[test]
+fn unknown_modules_are_not_found() {
+    assert!(registry::find_module("unknown").is_none());
+}

@@ -1,7 +1,12 @@
-# Local installer state
+# Local installer and Rust build state
 .dotfiles-cache/
 .worktrees/
+target/
+/state.json
+/state.lock
 secrets/*.env
+/atuin.env
+/opencode.env
 
 # Editor and operating-system noise
 .DS_Store

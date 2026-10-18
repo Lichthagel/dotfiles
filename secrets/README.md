@@ -1,9 +1,18 @@
 # Encrypted Secrets
 
-The Atuin module expects `secrets/atuin.env.age` when `atuin` is selected. The installer automatically adds the `age` package whenever a selected module has a matching encrypted secrets bundle.
-Do not commit a plaintext `.env` file or an age private key.
+The Rust release binary embeds `secrets/atuin.env.age` and
+`secrets/opencode.env.age` as encrypted payloads. It decrypts a selected bundle
+in memory with the Rust age library during setup. The installer does not
+install or invoke an external `age` command, and it never writes a temporary
+plaintext `.env` bundle.
 
-Create a local plaintext file with these values:
+Do not commit a plaintext `.env` file, an age private key, or a decrypted
+credential file. Plaintext source files are local development inputs and are
+ignored by Git.
+
+## Atuin
+
+Create a local plaintext file at `secrets/atuin.env` with these values:
 
 ```text
 ATUIN_USERNAME=your-username
@@ -12,16 +21,24 @@ ATUIN_KEY=your-atuin-encryption-key
 ATUIN_SYNC_ADDRESS=
 ```
 
-Encrypt it to the repository path using the recipient from your age identity setup:
+Encrypt it to the repository path using a recipient from your age identity:
 
 ```sh
-age -r AGE_RECIPIENT -o secrets/atuin.env.age atuin.env
-rm atuin.env
+age -r AGE_RECIPIENT -o secrets/atuin.env.age secrets/atuin.env
+rm secrets/atuin.env
 ```
 
-The installers decrypt this file only into a temporary directory, use the values to run `atuin login`, and remove the temporary plaintext file afterward. The age identity is read from `AGE_IDENTITIES`, `AGE_IDENTITY` (direct key contents), or the platform default path. If no identity is found in an interactive terminal, the installer prompts for a path or direct key.
+When `atuin` is selected, the binary reads the encrypted bundle and expects
+`ATUIN_USERNAME`, `ATUIN_PASSWORD`, and `ATUIN_KEY`; `ATUIN_SYNC_ADDRESS` is
+optional. Configure the decryption identity with `AGE_IDENTITIES` as an
+identity-file path, `AGE_IDENTITY` as direct key contents, or the platform
+default age identity path. Interactive setup can prompt for a path or direct
+key; unattended setup must provide an identity through the environment or
+platform default.
 
-The OpenCode module expects the encrypted bundle `secrets/opencode.env.age` with these required variable names:
+## OpenCode
+
+The OpenCode bundle requires these variable names:
 
 ```text
 OPENROUTER_API_KEY
@@ -30,4 +47,9 @@ AZURE_RESOURCE_NAME
 DIGITALOCEAN_ACCESS_TOKEN
 ```
 
-When OpenCode is selected, the installer decrypts the bundle only when an age identity/key is available. Without one, the optional provider setup is skipped. When decrypted, the setup hook materializes the values into protected, user-local credential files under the OpenCode configuration directory; the values are not written to tracked files or `opencode.jsonc`.
+Provider setup is optional as a group. Without a bundle or identity, existing
+provider configuration remains unchanged. A partially populated bundle fails
+before managed output is replaced. When all values are available, Rust writes
+them to protected user-local credential files and stores `{file:...}`
+references in the OpenCode configuration; secret values are not written to
+tracked files or JSON configuration.

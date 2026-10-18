@@ -11,7 +11,7 @@ installs only the requested modules.
 | `bash` | Linux | Yes | Updates a managed section in `~/.bashrc`, which loads Bash integration drop-ins. |
 | `zsh` | Linux | Yes | Updates a managed section in `~/.zshrc`, which loads Zsh integration drop-ins. |
 | `powershell` | Windows | Yes | Updates a managed section in the active PowerShell profile, using `$PROFILE` or the Windows Documents known folder, and loads PowerShell integration drop-ins. |
-| `mise` | Linux, Windows | Yes | Installs the mise tool version manager and provides optional shell activation. |
+| `mise` | Linux, Windows | Yes | Installs the mise tool version manager and provides optional shell activation. On Debian/Ubuntu and Fedora/RHEL, it enables mise's APT or RPM repository when the package is not already available. |
 | `brew` | Linux | No | Sets up Homebrew as a package manager and provides optional Bash and Zsh integration. |
 | `scoop` | Windows | No | Sets up Scoop as a package manager and provides optional PowerShell integration. |
 | `atuin` | Linux, Windows | No | Installs Atuin shell history, provides optional shell integration, and configures sync login when credentials are available. |

@@ -161,6 +161,44 @@ fn listed_exact_name(stdout: &[u8], package_name: &str) -> bool {
         .any(|line| line.split_whitespace().next() == Some(package_name))
 }
 
+fn package_not_found(manager: PackageManager, output: &CommandOutput) -> bool {
+    let detail = format!(
+        "{} {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+    .to_ascii_lowercase();
+    match manager {
+        PackageManager::Apt => {
+            detail.contains("unable to locate package")
+                || detail.contains("has no installation candidate")
+        }
+        PackageManager::Dnf => {
+            detail.contains("no match for argument")
+                || detail.contains("unable to find a match")
+                || (detail.contains("no package") && detail.contains("available"))
+        }
+        _ => false,
+    }
+}
+
+fn installation_failure(
+    manager: PackageManager,
+    package_name: &str,
+    output: CommandOutput,
+) -> InstallError {
+    let detail = String::from_utf8_lossy(&output.stderr);
+    InstallError::Package(format!(
+        "{} failed for {package_name}{}",
+        manager.label(),
+        if detail.is_empty() {
+            String::new()
+        } else {
+            format!(": {detail}")
+        }
+    ))
+}
+
 pub trait ManagerAdapter {
     fn manager(&self) -> PackageManager;
     fn available(&self, runner: &dyn CommandRunner) -> bool;
@@ -220,6 +258,172 @@ impl PackageManagerAdapter {
             }
         }
         Err(InstallError::Package("Scoop is not available".into()))
+    }
+
+    fn privilege_program(self, runner: &dyn CommandRunner) -> Result<&'static str> {
+        if runner.available("run0") {
+            Ok("run0")
+        } else if runner.available("sudo") {
+            Ok("sudo")
+        } else {
+            Err(InstallError::Package(format!(
+                "{} requires run0 or sudo for package installation",
+                self.manager.label()
+            )))
+        }
+    }
+
+    fn run_privileged(
+        self,
+        runner: &dyn CommandRunner,
+        args: &[&str],
+        operation: &str,
+    ) -> Result<CommandOutput> {
+        let privilege = self.privilege_program(runner)?;
+        let args = args
+            .iter()
+            .map(|argument| (*argument).to_owned())
+            .collect::<Vec<_>>();
+        runner.run(privilege, &args, &[], None).map_err(|error| {
+            InstallError::Package(format!(
+                "{} {operation} could not run: {error}",
+                self.manager.label()
+            ))
+        })
+    }
+
+    fn run_privileged_success(
+        self,
+        runner: &dyn CommandRunner,
+        args: &[&str],
+        operation: &str,
+    ) -> Result<()> {
+        let output = self.run_privileged(runner, args, operation)?;
+        if output.status == 0 {
+            return Ok(());
+        }
+        let detail = String::from_utf8_lossy(&output.stderr);
+        Err(InstallError::Package(format!(
+            "{} {operation} failed{}",
+            self.manager.label(),
+            if detail.is_empty() {
+                String::new()
+            } else {
+                format!(": {detail}")
+            }
+        )))
+    }
+
+    fn install_apt_mise(self, runner: &dyn CommandRunner) -> Result<()> {
+        let output = self.run_privileged(
+            runner,
+            &["apt-get", "install", "-y", "mise"],
+            "install mise",
+        )?;
+        if output.status == 0 {
+            return Ok(());
+        }
+        if !package_not_found(PackageManager::Apt, &output) {
+            return Err(installation_failure(self.manager, "mise", output));
+        }
+
+        self.run_privileged_success(
+            runner,
+            &["apt-get", "install", "-y", "extrepo"],
+            "install extrepo",
+        )?;
+        self.run_privileged_success(
+            runner,
+            &["extrepo", "enable", "mise"],
+            "enable the mise APT repository",
+        )?;
+        self.run_privileged_success(
+            runner,
+            &["apt-get", "update"],
+            "refresh APT package metadata",
+        )?;
+        self.run_privileged_success(
+            runner,
+            &["apt-get", "install", "-y", "mise"],
+            "install mise from the mise APT repository",
+        )
+    }
+
+    fn rhel_major(runner: &dyn CommandRunner) -> Option<u32> {
+        let output = runner
+            .run("rpm", &["-E".into(), "%{?rhel}".into()], &[], None)
+            .ok()?;
+        if output.status != 0 {
+            return None;
+        }
+        String::from_utf8_lossy(&output.stdout).trim().parse().ok()
+    }
+
+    fn install_dnf_mise(self, runner: &dyn CommandRunner) -> Result<()> {
+        let output =
+            self.run_privileged(runner, &["dnf", "install", "-y", "mise"], "install mise")?;
+        if output.status == 0 {
+            return Ok(());
+        }
+        if !package_not_found(PackageManager::Dnf, &output) {
+            return Err(installation_failure(self.manager, "mise", output));
+        }
+
+        match Self::rhel_major(runner) {
+            Some(8) => {
+                self.run_privileged_success(
+                    runner,
+                    &["dnf", "install", "-y", "yum-utils"],
+                    "install yum-utils",
+                )?;
+                self.run_privileged_success(
+                    runner,
+                    &[
+                        "yum-config-manager",
+                        "--add-repo",
+                        "https://mise.jdx.dev/rpm/mise.repo",
+                    ],
+                    "enable the mise RPM repository",
+                )?;
+            }
+            release => {
+                let plugin_package = if runner.available("dnf5") {
+                    "dnf5-plugins"
+                } else {
+                    "dnf-plugins-core"
+                };
+                self.run_privileged_success(
+                    runner,
+                    &["dnf", "install", "-y", plugin_package],
+                    "install the DNF COPR plugin",
+                )?;
+                if release == Some(9) {
+                    self.run_privileged_success(
+                        runner,
+                        &[
+                            "dnf",
+                            "copr",
+                            "enable",
+                            "-y",
+                            "jdxcode/mise",
+                            "centos-stream+epel-next-9",
+                        ],
+                        "enable the mise COPR repository",
+                    )?;
+                } else {
+                    self.run_privileged_success(
+                        runner,
+                        &["dnf", "copr", "enable", "-y", "jdxcode/mise"],
+                        "enable the mise COPR repository",
+                    )?;
+                }
+            }
+        }
+        self.run_privileged_success(
+            runner,
+            &["dnf", "install", "-y", "mise"],
+            "install mise from the mise repository",
+        )
     }
 
     fn query(self, runner: &dyn CommandRunner, args: &[String]) -> Result<CommandOutput> {
@@ -291,6 +495,13 @@ impl ManagerAdapter for PackageManagerAdapter {
 
     fn install(&self, runner: &dyn CommandRunner, package_name: &str) -> Result<()> {
         self.program()?;
+        if package_name == "mise" {
+            match self.manager {
+                PackageManager::Apt => return self.install_apt_mise(runner),
+                PackageManager::Dnf => return self.install_dnf_mise(runner),
+                _ => {}
+            }
+        }
         let (program, args): (String, Vec<String>) = match self.manager {
             PackageManager::Apt => {
                 let privilege = if runner.available("run0") {

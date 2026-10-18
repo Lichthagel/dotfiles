@@ -3,7 +3,101 @@ mod support;
 use dotfiles::model::{PackageManager, Platform};
 use dotfiles::packages::{build_package_plan, install_package, CommandRunner, PackageAction};
 use dotfiles::registry::find_module;
+use std::sync::Mutex;
 use support::runner::FakeRunner;
+
+struct RepositoryRunner {
+    calls: Mutex<Vec<(String, Vec<String>)>>,
+    rhel_release: Option<String>,
+    repository_enabled: Mutex<bool>,
+}
+
+impl RepositoryRunner {
+    fn new(rhel_release: Option<&str>) -> Self {
+        Self {
+            calls: Mutex::new(Vec::new()),
+            rhel_release: rhel_release.map(str::to_owned),
+            repository_enabled: Mutex::new(false),
+        }
+    }
+
+    fn calls(&self) -> Vec<(String, Vec<String>)> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+impl CommandRunner for RepositoryRunner {
+    fn available(&self, program: &str) -> bool {
+        matches!(program, "apt" | "dnf" | "run0" | "rpm")
+            || (program == "dnf5" && self.rhel_release.is_none())
+    }
+
+    fn run(
+        &self,
+        program: &str,
+        args: &[String],
+        _env: &[(String, String)],
+        _stdin: Option<&[u8]>,
+    ) -> dotfiles::error::Result<dotfiles::packages::CommandOutput> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((program.to_owned(), args.to_vec()));
+        if program == "rpm" {
+            return Ok(dotfiles::packages::CommandOutput {
+                status: 0,
+                stdout: self.rhel_release.clone().unwrap_or_default().into_bytes(),
+                stderr: Vec::new(),
+            });
+        }
+
+        let (command, command_args) = if program == "run0" {
+            (args[0].as_str(), &args[1..])
+        } else {
+            (program, args)
+        };
+        let is_mise_install =
+            command_args == ["install", "-y", "mise"] || command_args == ["install", "mise", "-y"];
+        if matches!(command, "apt-get" | "dnf")
+            && is_mise_install
+            && !*self.repository_enabled.lock().unwrap()
+        {
+            return Ok(dotfiles::packages::CommandOutput {
+                status: 1,
+                stdout: Vec::new(),
+                stderr: if command == "apt-get" {
+                    b"E: Unable to locate package mise".to_vec()
+                } else {
+                    b"No match for argument: mise".to_vec()
+                },
+            });
+        }
+        if (command == "extrepo" && command_args == ["enable", "mise"])
+            || (command == "dnf"
+                && command_args
+                    .first()
+                    .is_some_and(|argument| argument == "copr")
+                && command_args
+                    .get(1)
+                    .is_some_and(|argument| argument == "enable"))
+            || command == "yum-config-manager"
+        {
+            *self.repository_enabled.lock().unwrap() = true;
+        }
+        Ok(dotfiles::packages::CommandOutput {
+            status: 0,
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        })
+    }
+}
+
+fn args_are(actual: &[String], expected: &[&str]) -> bool {
+    actual
+        .iter()
+        .map(String::as_str)
+        .eq(expected.iter().copied())
+}
 
 fn module(id: &str) -> &'static dotfiles::registry::ModuleSpec {
     find_module(id).expect("registry module")
@@ -40,6 +134,101 @@ fn linux_falls_back_to_sudo_when_run0_is_unavailable() {
     .unwrap();
     assert_eq!(runner.last_program(), "sudo");
     assert_eq!(runner.last_args(), ["apt-get", "install", "-y", "git"]);
+}
+
+#[test]
+fn apt_enables_the_mise_extrepo_after_a_missing_package() {
+    let runner = RepositoryRunner::new(None);
+    install_package(
+        &runner,
+        Platform::Linux,
+        &action(PackageManager::Apt, "mise"),
+    )
+    .unwrap();
+
+    let calls = runner.calls();
+    assert!(calls.iter().any(|(program, args)| {
+        program == "run0" && args_are(args, &["apt-get", "install", "-y", "extrepo"])
+    }));
+    assert!(calls.iter().any(|(program, args)| {
+        program == "run0" && args_are(args, &["extrepo", "enable", "mise"])
+    }));
+    assert!(calls
+        .iter()
+        .any(|(program, args)| program == "run0" && args_are(args, &["apt-get", "update"])));
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|(program, args)| {
+                program == "run0" && args_are(args, &["apt-get", "install", "-y", "mise"])
+            })
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn dnf_enables_the_mise_copr_for_fedora_and_rhel_nine() {
+    for (release, expected) in [
+        (None, vec!["dnf", "copr", "enable", "-y", "jdxcode/mise"]),
+        (
+            Some("9"),
+            vec![
+                "dnf",
+                "copr",
+                "enable",
+                "-y",
+                "jdxcode/mise",
+                "centos-stream+epel-next-9",
+            ],
+        ),
+    ] {
+        let runner = RepositoryRunner::new(release);
+        install_package(
+            &runner,
+            Platform::Linux,
+            &action(PackageManager::Dnf, "mise"),
+        )
+        .unwrap();
+        let calls = runner.calls();
+        assert!(calls
+            .iter()
+            .any(|(program, args)| program == "run0" && args_are(args, &expected)));
+        let plugins = if release.is_none() {
+            "dnf5-plugins"
+        } else {
+            "dnf-plugins-core"
+        };
+        assert!(calls.iter().any(|(program, args)| {
+            program == "run0" && args_are(args, &["dnf", "install", "-y", plugins])
+        }));
+    }
+}
+
+#[test]
+fn dnf_uses_the_mise_rpm_repo_on_rhel_eight() {
+    let runner = RepositoryRunner::new(Some("8"));
+    install_package(
+        &runner,
+        Platform::Linux,
+        &action(PackageManager::Dnf, "mise"),
+    )
+    .unwrap();
+
+    assert!(runner.calls().iter().any(|(program, args)| {
+        program == "run0" && args_are(args, &["dnf", "install", "-y", "yum-utils"])
+    }));
+    assert!(runner.calls().iter().any(|(program, args)| {
+        program == "run0"
+            && args_are(
+                args,
+                &[
+                    "yum-config-manager",
+                    "--add-repo",
+                    "https://mise.jdx.dev/rpm/mise.repo",
+                ],
+            )
+    }));
 }
 
 #[test]

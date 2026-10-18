@@ -56,6 +56,8 @@ cargo run -- --modules git,powershell --yes
 Without `--modules`/`--apps`, the binary opens the interactive module checklist.
 Explicit module selection is required for unattended setup.
 
+A package is skipped when its command is already in `PATH`, using the logical name from the module declaration, so a tool installed outside the package manager is not reinstalled and needs no available package manager.
+
 ## Testing
 
 Run the Rust verification matrix from a checkout:

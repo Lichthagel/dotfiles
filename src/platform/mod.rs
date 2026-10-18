@@ -487,9 +487,8 @@ pub(crate) fn current_profile(home: &Path) -> PathBuf {
         std::env::var_os("DOTFILES_PROFILE")
             .map(PathBuf::from)
             .unwrap_or_else(|| {
-                home.join("Documents")
-                    .join("PowerShell")
-                    .join("Microsoft.PowerShell_profile.ps1")
+                let documents = windows::documents_dir();
+                windows::profile_path_from_documents(home, documents.as_deref())
             })
     }
     #[cfg(not(windows))]

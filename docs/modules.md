@@ -9,7 +9,7 @@ installs only the requested modules.
 | --- | --- | --- | --- |
 | `git` | Linux, Windows | Yes | Installs Git and writes `~/.gitconfig`. |
 | `bash` | Linux | Yes | Writes `~/.bashrc`, which loads shell integration drop-ins. |
-| `powershell` | Windows | Yes | Writes the PowerShell profile, which loads shell integration drop-ins. |
+| `powershell` | Windows | Yes | Writes the active PowerShell profile, using `$PROFILE` or the Windows Documents known folder, and loads shell integration drop-ins. |
 | `mise` | Linux, Windows | Yes | Installs the mise tool version manager and provides optional shell activation. |
 | `brew` | Linux | No | Sets up Homebrew as a package manager and provides optional Bash integration. |
 | `scoop` | Windows | No | Sets up Scoop as a package manager and provides optional PowerShell integration. |

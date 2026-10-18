@@ -24,7 +24,9 @@ R2 `dotfiles/` prefix at `https://r2.licht.moe/dotfiles/`. There are no
 versioned downloads; the bootstrap always installs the current build. Set
 `DOTFILES_BASE_URL` to test another download endpoint. The Windows bootstrap
 passes the current PowerShell `$PROFILE` through `DOTFILES_PROFILE` so profile
-mappings work when the binary is run outside PowerShell.
+mappings work when the binary is run outside PowerShell. Direct binary runs
+resolve the Windows Documents known folder, so redirected locations such as
+`D:\Documents\PowerShell` are respected too.
 
 OpenCode theme downloads reuse the installed `curl` executable (`curl.exe` on
 Windows), including its TLS backend and default certificate verification. Curl

@@ -5,6 +5,8 @@
 - `src/main.rs` and the `dotfiles` Cargo binary are the cross-platform entry point.
 - `src/registry.rs` is the single typed module registry; it replaces the old
   manifest parser and must describe every supported module.
+- Keep `docs/modules.md` up to date whenever modules are added, removed, or
+  changed, including supported platforms, default selections, and behavior.
 - `src/assets.rs` explicitly embeds static configuration/profile assets and the
   encrypted bundles `secrets/atuin.env.age` and `secrets/opencode.env.age`.
 - `src/setup/` contains native Rust setup handlers. Do not add arbitrary Bash

@@ -73,6 +73,9 @@ and runs the native test suites. Configure the repository Actions secrets
 `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_R2_ACCESS_KEY_ID`,
 `CLOUDFLARE_R2_SECRET_ACCESS_KEY`, and `CLOUDFLARE_R2_BUCKET` for uploads.
 
+See the [module reference](docs/modules.md) for a table of supported modules,
+platforms, and default selections.
+
 The current modules are `git`, `bash`, `powershell`, `mise`, `brew`, `scoop`,
 `atuin`, `oh-my-posh`, and `opencode`. `atuin`, `oh-my-posh`, and `opencode`
 are opt-in. Existing targets are moved into timestamped backup directories

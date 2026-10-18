@@ -1,44 +1,41 @@
 use super::{CROSS_PLATFORM, NO_REQUIREMENTS, REPLACE_MAPPING};
 use crate::model::{EmbeddedAsset, PackageManager, Platform, Target};
-use crate::registry::{MappingSpec, ModuleSpec, PackageSpec};
+use crate::registry::{MappingSpec, ModuleSpec, Package, PackageSource};
 
-const GIT_PACKAGES: &[PackageSpec] = &[
-    PackageSpec {
-        logical: "git",
-        manager: PackageManager::Apt,
-        name: "git",
-    },
-    PackageSpec {
-        logical: "git",
-        manager: PackageManager::Dnf,
-        name: "git",
-    },
-    PackageSpec {
-        logical: "git",
-        manager: PackageManager::Pacman,
-        name: "git",
-    },
-    PackageSpec {
-        logical: "git",
-        manager: PackageManager::Brew,
-        name: "git",
-    },
-    PackageSpec {
-        logical: "git",
-        manager: PackageManager::Mise,
-        name: "git",
-    },
-    PackageSpec {
-        logical: "git",
-        manager: PackageManager::Winget,
-        name: "Git.Git",
-    },
-    PackageSpec {
-        logical: "git",
-        manager: PackageManager::Scoop,
-        name: "git",
-    },
-];
+const GIT_PACKAGES: &[Package] = &[Package {
+    id: "git",
+    command: Some("git"),
+    sources: &[
+        PackageSource {
+            manager: PackageManager::Apt,
+            name: "git",
+        },
+        PackageSource {
+            manager: PackageManager::Dnf,
+            name: "git",
+        },
+        PackageSource {
+            manager: PackageManager::Pacman,
+            name: "git",
+        },
+        PackageSource {
+            manager: PackageManager::Brew,
+            name: "git",
+        },
+        PackageSource {
+            manager: PackageManager::Mise,
+            name: "git",
+        },
+        PackageSource {
+            manager: PackageManager::Winget,
+            name: "Git.Git",
+        },
+        PackageSource {
+            manager: PackageManager::Scoop,
+            name: "git",
+        },
+    ],
+}];
 
 const GIT_CONFIG_ASSET: EmbeddedAsset = EmbeddedAsset::new(
     "git/gitconfig",

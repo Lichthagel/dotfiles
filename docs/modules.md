@@ -38,13 +38,21 @@ cargo run -- --modules git,powershell,mise --yes
 plan without prompting; unattended setup still requires explicit module
 selection. Use `--list` to list modules supported by the current binary.
 
-Package installation is skipped when the package's command is already in
-`PATH`, using its logical name from the module declaration (for example, `git`
-rather than the Winget ID `Git.Git`). This check happens before package-manager
-queries or automatic provider selection, so tools installed outside a package
-manager do not require one. If the command is absent, package-manager records
-are still checked to avoid reinstalling an existing package. Skipping a package
-does not skip the module's setup, configuration mappings, or applied-state update.
+Each module declares packages as a `Package` with a stable `id`, an optional
+`command`, and nested `PackageSource` alternatives (`manager` and package `name`).
+The ID groups sources into one installation requirement and labels package
+selection and diagnostics; it does not determine the executable name. For
+example, Git declares ID `git`, command `Some("git")`, and a Winget source named
+`Git.Git`. Package IDs shared across modules are planned once, with their sources
+combined.
+
+Package installation is skipped when the explicitly declared command is already
+in `PATH`. This check happens before package-manager queries or automatic
+provider selection, so tools installed outside a package manager do not require
+one. If the command is absent, or `command` is `None`, package-manager records
+are still checked to avoid reinstalling an existing package. Source availability
+and manager priority remain platform-specific. Skipping a package does not skip
+the module's setup, configuration mappings, or applied-state update.
 
 Shell integration requires the corresponding shell module to be selected in
 this run or recorded as previously applied: `bash` or `zsh` on Linux, and

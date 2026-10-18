@@ -4,8 +4,14 @@ use crate::model::{EmbeddedAsset, EmbeddedSecretBundle, PackageManager, Platform
 use crate::setup::{SecretRequestHandler, SetupHandler};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PackageSpec {
-    pub logical: &'static str,
+pub struct Package {
+    pub id: &'static str,
+    pub command: Option<&'static str>,
+    pub sources: &'static [PackageSource],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PackageSource {
     pub manager: PackageManager,
     pub name: &'static str,
 }
@@ -36,7 +42,7 @@ pub struct ModuleSpec {
     pub default_selected: bool,
     pub provides: Option<PackageManager>,
     pub requires: &'static [&'static str],
-    pub packages: &'static [PackageSpec],
+    pub packages: &'static [Package],
     pub mappings: &'static [MappingSpec],
     pub setup: Option<SetupHandler>,
     pub secret_request: Option<SecretRequestHandler>,

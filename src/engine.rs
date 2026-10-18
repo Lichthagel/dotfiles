@@ -86,26 +86,25 @@ impl<'a, 'r> Resolver<'a, 'r> {
             self.resolve(dependency)?;
         }
 
-        let logical_names = module
-            .packages
-            .iter()
-            .map(|package| package.logical)
-            .collect::<BTreeSet<_>>();
-        for logical in logical_names {
-            if self.runner.available(logical) {
+        for package in module.packages {
+            if package
+                .command
+                .is_some_and(|command| self.runner.available(command))
+            {
                 continue;
             }
-            let candidates = module.packages.iter().filter(|package| {
-                package.logical == logical && package.manager.is_supported_on(self.platform)
-            });
-            if candidates.clone().any(|package| {
-                PackageManagerAdapter::new(self.platform, package.manager).available(self.runner)
+            let sources = package
+                .sources
+                .iter()
+                .filter(|source| source.manager.is_supported_on(self.platform));
+            if sources.clone().any(|source| {
+                PackageManagerAdapter::new(self.platform, source.manager).available(self.runner)
             }) {
                 continue;
             }
-            for package in candidates {
+            for source in sources {
                 let provider = self.modules.iter().find(|candidate| {
-                    candidate.provides == Some(package.manager) && candidate.supports(self.platform)
+                    candidate.provides == Some(source.manager) && candidate.supports(self.platform)
                 });
                 if let Some(provider) = provider {
                     self.resolve(provider.id)?;
@@ -164,11 +163,15 @@ pub fn ordered_phases<'a>(modules: &[&'a ModuleSpec]) -> Result<Vec<Vec<&'a Modu
                     .iter()
                     .flat_map(|mapping| mapping.requires.iter().copied()),
             );
-            let mut provider_dependencies = module.packages.iter().filter_map(|package| {
-                by_id.values().find(|candidate| {
-                    candidate.provides == Some(package.manager) && candidate.id != module.id
-                })
-            });
+            let mut provider_dependencies = module
+                .packages
+                .iter()
+                .flat_map(|package| package.sources)
+                .filter_map(|source| {
+                    by_id.values().find(|candidate| {
+                        candidate.provides == Some(source.manager) && candidate.id != module.id
+                    })
+                });
             let dependencies_ready = dependencies
                 .iter()
                 .all(|dependency| !by_id.contains_key(dependency) || emitted.contains(*dependency));
@@ -253,19 +256,19 @@ pub fn install_with_registry(
                 install_package(context.runner, request.platform, action).map_err(|error| {
                     InstallError::Package(format!(
                         "{} package {}: {error}",
-                        action.module, action.logical
+                        action.module, action.package_id
                     ))
                 })?;
                 context.runner.refresh().map_err(|error| {
                     InstallError::Package(format!(
                         "{} package {}: command lookup refresh failed: {error}",
-                        action.module, action.logical
+                        action.module, action.package_id
                     ))
                 })?;
             } else {
                 context.terminal.write_line(&format!(
                     "Skipped package {} for module {}; dotfiles were still installed.",
-                    action.logical, action.module
+                    action.package_id, action.module
                 ))?;
             }
         }

@@ -11,27 +11,36 @@ use dotfiles::engine::{ordered_phases, resolve_modules_from_registry};
 use dotfiles::error::Result;
 use dotfiles::model::{PackageManager, Platform};
 use dotfiles::platform::PlatformOps;
-use dotfiles::registry::{MappingSpec, ModuleSpec, PackageSpec};
+use dotfiles::registry::{MappingSpec, ModuleSpec, Package, PackageSource};
 use dotfiles::run;
 use dotfiles::state::ModuleState;
 use support::installer::{test_context, InstallFixture};
 use support::runner::FakeRunner;
 
-static TEST_PROVIDER_PACKAGES: &[PackageSpec] = &[PackageSpec {
-    logical: "mise",
-    manager: PackageManager::Apt,
-    name: "mise",
+static TEST_PROVIDER_PACKAGES: &[Package] = &[Package {
+    id: "mise",
+    command: Some("mise"),
+    sources: &[PackageSource {
+        manager: PackageManager::Apt,
+        name: "mise",
+    }],
 }];
-static TEST_CONSUMER_PACKAGES: &[PackageSpec] = &[PackageSpec {
-    logical: "consumer",
-    manager: PackageManager::Mise,
-    name: "consumer",
+static TEST_CONSUMER_PACKAGES: &[Package] = &[Package {
+    id: "consumer-package",
+    command: Some("consumer"),
+    sources: &[PackageSource {
+        manager: PackageManager::Mise,
+        name: "consumer",
+    }],
 }];
 static TEST_NO_MAPPINGS: &[MappingSpec] = &[];
-static UNAVAILABLE_GIT_PACKAGES: &[PackageSpec] = &[PackageSpec {
-    logical: "git",
-    manager: PackageManager::Apt,
-    name: "git",
+static UNAVAILABLE_GIT_PACKAGES: &[Package] = &[Package {
+    id: "git",
+    command: Some("git"),
+    sources: &[PackageSource {
+        manager: PackageManager::Apt,
+        name: "git",
+    }],
 }];
 static TEST_PROVIDER: ModuleSpec = ModuleSpec {
     id: "test-mise-provider",
@@ -171,6 +180,52 @@ fn existing_commands_do_not_resolve_package_manager_providers() {
     assert_eq!(
         resolved.iter().map(|module| module.id).collect::<Vec<_>>(),
         ["test-mise-consumer"]
+    );
+}
+
+#[test]
+fn package_ids_are_not_used_as_commands_during_provider_resolution() {
+    let runner = FakeRunner::available(["consumer-package"]);
+    let resolved = resolve_modules_from_registry(
+        &["test-mise-consumer".into()],
+        Platform::Linux,
+        &runner,
+        TEST_MODULES,
+    )
+    .unwrap();
+    assert_eq!(
+        resolved.iter().map(|module| module.id).collect::<Vec<_>>(),
+        ["test-mise-provider", "test-mise-consumer"]
+    );
+}
+
+#[test]
+fn packages_without_commands_still_resolve_providers() {
+    let modules = [
+        TEST_PROVIDER,
+        ModuleSpec {
+            packages: &[Package {
+                id: "consumer-package",
+                command: None,
+                sources: &[PackageSource {
+                    manager: PackageManager::Mise,
+                    name: "consumer",
+                }],
+            }],
+            ..TEST_CONSUMER
+        },
+    ];
+    let runner = FakeRunner::available(["consumer-package", "consumer"]);
+    let resolved = resolve_modules_from_registry(
+        &["test-mise-consumer".into()],
+        Platform::Linux,
+        &runner,
+        &modules,
+    )
+    .unwrap();
+    assert_eq!(
+        resolved.iter().map(|module| module.id).collect::<Vec<_>>(),
+        ["test-mise-provider", "test-mise-consumer"]
     );
 }
 
@@ -670,7 +725,7 @@ fn synthetic_dependency_cycles_are_rejected() {
 
     static A_REQUIRES: &[&str] = &["cycle-b"];
     static B_REQUIRES: &[&str] = &["cycle-a"];
-    static EMPTY_PACKAGES: &[dotfiles::registry::PackageSpec] = &[];
+    static EMPTY_PACKAGES: &[dotfiles::registry::Package] = &[];
     static EMPTY_MAPPINGS: &[MappingSpec] = &[];
     static A: ModuleSpec = ModuleSpec {
         id: "cycle-a",

@@ -199,7 +199,7 @@ fn interactive_terminal_starts_each_line_at_column_zero() {
 fn package_plan() -> PackagePlan {
     PackagePlan {
         actions: vec![PackageAction {
-            logical: "git".into(),
+            package_id: "git".into(),
             module: "git".into(),
             manager: PackageManager::Apt,
             package_name: "git".into(),

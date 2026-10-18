@@ -3,40 +3,38 @@ use super::{
     REQUIRES_ZSH,
 };
 use crate::model::{EmbeddedAsset, PackageManager, Platform, Target};
-use crate::registry::{MappingSpec, ModuleSpec, PackageSpec};
+use crate::registry::{MappingSpec, ModuleSpec, Package, PackageSource};
 
-const MISE_PACKAGES: &[PackageSpec] = &[
-    PackageSpec {
-        logical: "mise",
-        manager: PackageManager::Apt,
-        name: "mise",
-    },
-    PackageSpec {
-        logical: "mise",
-        manager: PackageManager::Dnf,
-        name: "mise",
-    },
-    PackageSpec {
-        logical: "mise",
-        manager: PackageManager::Pacman,
-        name: "mise",
-    },
-    PackageSpec {
-        logical: "mise",
-        manager: PackageManager::Brew,
-        name: "mise",
-    },
-    PackageSpec {
-        logical: "mise",
-        manager: PackageManager::Winget,
-        name: "jdx.mise",
-    },
-    PackageSpec {
-        logical: "mise",
-        manager: PackageManager::Scoop,
-        name: "mise",
-    },
-];
+const MISE_PACKAGES: &[Package] = &[Package {
+    id: "mise",
+    command: Some("mise"),
+    sources: &[
+        PackageSource {
+            manager: PackageManager::Apt,
+            name: "mise",
+        },
+        PackageSource {
+            manager: PackageManager::Dnf,
+            name: "mise",
+        },
+        PackageSource {
+            manager: PackageManager::Pacman,
+            name: "mise",
+        },
+        PackageSource {
+            manager: PackageManager::Brew,
+            name: "mise",
+        },
+        PackageSource {
+            manager: PackageManager::Winget,
+            name: "jdx.mise",
+        },
+        PackageSource {
+            manager: PackageManager::Scoop,
+            name: "mise",
+        },
+    ],
+}];
 
 const MISE_BASH_ASSET: EmbeddedAsset = EmbeddedAsset::new(
     "mise/bash/10-mise.bash",

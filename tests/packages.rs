@@ -2,7 +2,7 @@ mod support;
 
 use dotfiles::model::{PackageManager, Platform};
 use dotfiles::packages::{build_package_plan, install_package, CommandRunner, PackageAction};
-use dotfiles::registry::find_module;
+use dotfiles::registry::{find_module, ModuleSpec, Package, PackageSource};
 use std::sync::Mutex;
 use support::runner::FakeRunner;
 
@@ -103,9 +103,17 @@ fn module(id: &str) -> &'static dotfiles::registry::ModuleSpec {
     find_module(id).expect("registry module")
 }
 
+fn test_module(packages: &'static [Package]) -> ModuleSpec {
+    ModuleSpec {
+        id: "test",
+        packages,
+        ..*module("git")
+    }
+}
+
 fn action(manager: PackageManager, package_name: &str) -> PackageAction {
     PackageAction {
-        logical: "test".to_owned(),
+        package_id: "test".to_owned(),
         module: "test".to_owned(),
         manager,
         package_name: package_name.to_owned(),
@@ -232,7 +240,7 @@ fn dnf_uses_the_mise_rpm_repo_on_rhel_eight() {
 }
 
 #[test]
-fn installed_logical_packages_are_not_planned() {
+fn installed_packages_are_not_planned() {
     let runner = FakeRunner::available_and_installed(["winget"], [("winget", "Git.Git")]);
     let plan = build_package_plan(&runner, Platform::Windows, &[module("git")], true).unwrap();
     assert!(plan.actions().is_empty());
@@ -254,10 +262,141 @@ fn available_commands_are_not_planned_or_queried() {
 }
 
 #[test]
+fn command_package_id_and_source_name_are_independent() {
+    let module = test_module(&[Package {
+        id: "tool-package",
+        command: Some("tool"),
+        sources: &[PackageSource {
+            manager: PackageManager::Apt,
+            name: "distribution-tool",
+        }],
+    }]);
+    let runner = FakeRunner::available(["tool"]);
+    let plan = build_package_plan(&runner, Platform::Linux, &[&module], true).unwrap();
+    assert!(plan.actions().is_empty());
+    assert!(runner.calls().is_empty());
+
+    let runner = FakeRunner::available(["apt", "run0", "tool-package", "distribution-tool"]);
+    let plan = build_package_plan(&runner, Platform::Linux, &[&module], true).unwrap();
+    assert_eq!(plan.actions().len(), 1);
+    let action = &plan.actions()[0];
+    assert_eq!(action.package_id, "tool-package");
+    assert_eq!(action.package_name, "distribution-tool");
+    assert_eq!(plan.alternatives["tool-package"].len(), 1);
+    install_package(&runner, Platform::Linux, action).unwrap();
+    assert_eq!(
+        runner.last_args(),
+        ["apt-get", "install", "-y", "distribution-tool"]
+    );
+}
+
+#[test]
+fn packages_without_commands_use_only_manager_records() {
+    let module = test_module(&[Package {
+        id: "git",
+        command: None,
+        sources: &[PackageSource {
+            manager: PackageManager::Apt,
+            name: "git-data",
+        }],
+    }]);
+    let runner = FakeRunner::available(["git", "apt"]);
+    let plan = build_package_plan(&runner, Platform::Linux, &[&module], true).unwrap();
+    assert_eq!(plan.actions().len(), 1);
+    assert_eq!(plan.actions()[0].package_name, "git-data");
+
+    let runner = FakeRunner::available_and_installed(["apt"], [("apt", "git-data")]);
+    let plan = build_package_plan(&runner, Platform::Linux, &[&module], true).unwrap();
+    assert!(plan.actions().is_empty());
+}
+
+#[test]
+fn shared_package_ids_merge_sources_into_one_action() {
+    let first = test_module(&[Package {
+        id: "tool-package",
+        command: Some("tool"),
+        sources: &[PackageSource {
+            manager: PackageManager::Apt,
+            name: "distribution-tool",
+        }],
+    }]);
+    let second = ModuleSpec {
+        id: "second",
+        ..test_module(&[Package {
+            id: "tool-package",
+            command: Some("tool"),
+            sources: &[PackageSource {
+                manager: PackageManager::Brew,
+                name: "tool",
+            }],
+        }])
+    };
+    let runner = FakeRunner::available(["apt", "brew"]);
+    let plan = build_package_plan(&runner, Platform::Linux, &[&first, &second], true).unwrap();
+    assert_eq!(plan.actions().len(), 1);
+    assert_eq!(plan.actions()[0].package_id, "tool-package");
+    assert_eq!(plan.actions()[0].module, "test");
+    assert_eq!(plan.actions()[0].manager, PackageManager::Apt);
+    assert_eq!(plan.alternatives["tool-package"].len(), 2);
+}
+
+#[test]
+fn modules_can_require_multiple_independent_packages() {
+    let module = test_module(&[
+        Package {
+            id: "existing-tool",
+            command: Some("tool"),
+            sources: &[PackageSource {
+                manager: PackageManager::Apt,
+                name: "distribution-tool",
+            }],
+        },
+        Package {
+            id: "tool-data",
+            command: None,
+            sources: &[
+                PackageSource {
+                    manager: PackageManager::Apt,
+                    name: "distribution-tool-data",
+                },
+                PackageSource {
+                    manager: PackageManager::Brew,
+                    name: "tool-data",
+                },
+            ],
+        },
+    ]);
+    let runner = FakeRunner::available(["tool", "apt", "brew"]);
+    let plan = build_package_plan(&runner, Platform::Linux, &[&module], true).unwrap();
+    assert_eq!(plan.actions().len(), 1);
+    assert_eq!(plan.actions()[0].package_id, "tool-data");
+    assert_eq!(plan.actions()[0].package_name, "distribution-tool-data");
+    assert_eq!(plan.alternatives["tool-data"].len(), 2);
+    assert!(!plan.alternatives.contains_key("existing-tool"));
+}
+
+#[test]
+fn packages_without_platform_sources_are_ignored() {
+    let module = test_module(&[Package {
+        id: "windows-only",
+        command: None,
+        sources: &[PackageSource {
+            manager: PackageManager::Winget,
+            name: "Windows.Only",
+        }],
+    }]);
+    let runner = FakeRunner::available(["winget"]);
+    let plan = build_package_plan(&runner, Platform::Linux, &[&module], true).unwrap();
+    assert!(plan.actions().is_empty());
+    assert!(plan.alternatives.is_empty());
+    assert!(runner.calls().is_empty());
+}
+
+#[test]
 fn similarly_named_commands_do_not_suppress_packages() {
     let runner = FakeRunner::available(["apt", "git-lfs"]);
     let plan = build_package_plan(&runner, Platform::Linux, &[module("git")], true).unwrap();
-    assert_eq!(plan.actions()[0].logical, "git");
+    assert_eq!(plan.actions()[0].package_id, "git");
 }
 
 #[test]

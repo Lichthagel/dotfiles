@@ -116,7 +116,12 @@ fn package_alternatives_are_preserved_without_jq_or_age() {
         (PackageManager::Scoop, "git"),
     ] {
         assert!(git.packages.iter().any(|package| {
-            package.manager == manager && package.name == name && package.logical == "git"
+            package.id == "git"
+                && package.command == Some("git")
+                && package
+                    .sources
+                    .iter()
+                    .any(|source| source.manager == manager && source.name == name)
         }));
     }
 
@@ -131,7 +136,12 @@ fn package_alternatives_are_preserved_without_jq_or_age() {
         (PackageManager::Scoop, "atuin"),
     ] {
         assert!(atuin.packages.iter().any(|package| {
-            package.manager == manager && package.name == name && package.logical == "atuin"
+            package.id == "atuin"
+                && package.command == Some("atuin")
+                && package
+                    .sources
+                    .iter()
+                    .any(|source| source.manager == manager && source.name == name)
         }));
     }
 
@@ -146,7 +156,12 @@ fn package_alternatives_are_preserved_without_jq_or_age() {
         (PackageManager::Scoop, "oh-my-posh"),
     ] {
         assert!(oh_my_posh.packages.iter().any(|package| {
-            package.manager == manager && package.name == name && package.logical == "oh-my-posh"
+            package.id == "oh-my-posh"
+                && package.command == Some("oh-my-posh")
+                && package
+                    .sources
+                    .iter()
+                    .any(|source| source.manager == manager && source.name == name)
         }));
     }
 
@@ -160,26 +175,39 @@ fn package_alternatives_are_preserved_without_jq_or_age() {
         (PackageManager::Scoop, "mise"),
     ] {
         assert!(mise.packages.iter().any(|package| {
-            package.manager == manager && package.name == name && package.logical == "mise"
+            package.id == "mise"
+                && package.command == Some("mise")
+                && package
+                    .sources
+                    .iter()
+                    .any(|source| source.manager == manager && source.name == name)
         }));
     }
 
     let opencode = registry::find_module("opencode").unwrap();
-    assert!(opencode.packages.iter().any(|package| {
-        package.manager == PackageManager::Brew && package.name == "anomalyco/tap/opencode"
-    }));
-    assert!(opencode.packages.iter().any(|package| {
-        package.manager == PackageManager::Mise && package.name == "github:anomalyco/opencode"
-    }));
-    assert!(opencode
-        .packages
-        .iter()
-        .any(|package| package.manager == PackageManager::Scoop && package.name == "opencode"));
+    assert_eq!(opencode.packages.len(), 1);
+    let package = &opencode.packages[0];
+    assert_eq!(package.id, "opencode");
+    assert_eq!(package.command, Some("opencode"));
+    for (manager, name) in [
+        (PackageManager::Brew, "anomalyco/tap/opencode"),
+        (PackageManager::Mise, "github:anomalyco/opencode"),
+        (PackageManager::Scoop, "opencode"),
+    ] {
+        assert!(package
+            .sources
+            .iter()
+            .any(|source| source.manager == manager && source.name == name));
+    }
     assert!(!registry::modules()
         .iter()
         .flat_map(|module| module.packages)
         .any(|package| {
-            package.name == "jq" || package.name == "FiloSottile.age" || package.logical == "age"
+            package.id == "age"
+                || package
+                    .sources
+                    .iter()
+                    .any(|source| source.name == "jq" || source.name == "FiloSottile.age")
         }));
 }
 

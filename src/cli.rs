@@ -433,10 +433,10 @@ pub fn select_packages(
             TerminalKey::Space => plan.actions[cursor].selected = !plan.actions[cursor].selected,
             key @ (TerminalKey::Left | TerminalKey::Right) => {
                 let action = &mut plan.actions[cursor];
-                let candidates = plan.alternatives.get(&action.logical).ok_or_else(|| {
+                let candidates = plan.alternatives.get(&action.package_id).ok_or_else(|| {
                     InstallError::Package(format!(
                         "package plan has no alternatives for {}",
-                        action.logical
+                        action.package_id
                     ))
                 })?;
                 let current = candidates
@@ -445,7 +445,7 @@ pub fn select_packages(
                     .ok_or_else(|| {
                         InstallError::Package(format!(
                             "package plan has no selected manager for {}",
-                            action.logical
+                            action.package_id
                         ))
                     })?;
                 let next = if key == TerminalKey::Right {
@@ -480,7 +480,7 @@ fn render_packages(plan: &PackagePlan, cursor: usize, terminal: &mut dyn Termina
             pointer,
             &format!(
                 " [{marker}] {} -> {}",
-                action.logical,
+                action.package_id,
                 action.manager.label()
             ),
             style,
@@ -522,9 +522,9 @@ pub fn print_module_list(platform: Platform, output: &mut dyn Write) -> Result<(
     Ok(())
 }
 
-pub fn package_manager_options(plan: &PackagePlan, logical: &str) -> Vec<PackageManager> {
+pub fn package_manager_options(plan: &PackagePlan, package_id: &str) -> Vec<PackageManager> {
     plan.alternatives
-        .get(logical)
+        .get(package_id)
         .map(|items| items.iter().map(|item| item.manager).collect())
         .unwrap_or_default()
 }

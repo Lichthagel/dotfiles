@@ -5,48 +5,45 @@ use super::{
 use crate::error::{InstallError, Result};
 use crate::model::{EmbeddedAsset, EmbeddedSecretBundle, PackageManager, Platform, Target};
 use crate::packages::CommandRunner;
-use crate::registry::{MappingSpec, ModuleSpec, PackageSpec};
+use crate::registry::{MappingSpec, ModuleSpec, Package, PackageSource};
 use crate::secrets::{required_values, SecretMode, SecretValues};
 use crate::setup::{SetupContext, SetupProbeContext};
 use zeroize::Zeroizing;
 
-const ATUIN_PACKAGES: &[PackageSpec] = &[
-    PackageSpec {
-        logical: "atuin",
-        manager: PackageManager::Apt,
-        name: "atuin",
-    },
-    PackageSpec {
-        logical: "atuin",
-        manager: PackageManager::Dnf,
-        name: "atuin",
-    },
-    PackageSpec {
-        logical: "atuin",
-        manager: PackageManager::Pacman,
-        name: "atuin",
-    },
-    PackageSpec {
-        logical: "atuin",
-        manager: PackageManager::Brew,
-        name: "atuin",
-    },
-    PackageSpec {
-        logical: "atuin",
-        manager: PackageManager::Mise,
-        name: "atuin",
-    },
-    PackageSpec {
-        logical: "atuin",
-        manager: PackageManager::Winget,
-        name: "Atuinsh.Atuin",
-    },
-    PackageSpec {
-        logical: "atuin",
-        manager: PackageManager::Scoop,
-        name: "atuin",
-    },
-];
+const ATUIN_PACKAGES: &[Package] = &[Package {
+    id: "atuin",
+    command: Some("atuin"),
+    sources: &[
+        PackageSource {
+            manager: PackageManager::Apt,
+            name: "atuin",
+        },
+        PackageSource {
+            manager: PackageManager::Dnf,
+            name: "atuin",
+        },
+        PackageSource {
+            manager: PackageManager::Pacman,
+            name: "atuin",
+        },
+        PackageSource {
+            manager: PackageManager::Brew,
+            name: "atuin",
+        },
+        PackageSource {
+            manager: PackageManager::Mise,
+            name: "atuin",
+        },
+        PackageSource {
+            manager: PackageManager::Winget,
+            name: "Atuinsh.Atuin",
+        },
+        PackageSource {
+            manager: PackageManager::Scoop,
+            name: "atuin",
+        },
+    ],
+}];
 
 const ATUIN_SECRET_BUNDLE: EmbeddedSecretBundle =
     EmbeddedSecretBundle::new("Atuin", include_bytes!("../../secrets/atuin.env.age"));

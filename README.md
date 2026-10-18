@@ -61,7 +61,11 @@ previously applied modules using a local state file; selected modules still run
 again. See [applied module state](docs/modules.md#applied-module-state) for paths
 and behavior.
 
-A package is skipped when its command is already in `PATH`, using the logical name from the module declaration, so a tool installed outside the package manager is not reinstalled and needs no available package manager.
+A package is skipped when its explicitly declared `command` is already in
+`PATH`, so a tool installed outside the package manager is not reinstalled and
+needs no available package manager. Each package has a stable `id` and nested
+manager-specific `sources`; packages without a command use package-manager
+records to detect existing installations.
 
 ## Testing
 

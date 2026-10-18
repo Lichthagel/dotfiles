@@ -3,45 +3,42 @@ use super::{
     REQUIRES_ZSH,
 };
 use crate::model::{EmbeddedAsset, PackageManager, Platform, Target};
-use crate::registry::{MappingSpec, ModuleSpec, PackageSpec};
+use crate::registry::{MappingSpec, ModuleSpec, Package, PackageSource};
 
-const OH_MY_POSH_PACKAGES: &[PackageSpec] = &[
-    PackageSpec {
-        logical: "oh-my-posh",
-        manager: PackageManager::Apt,
-        name: "oh-my-posh",
-    },
-    PackageSpec {
-        logical: "oh-my-posh",
-        manager: PackageManager::Dnf,
-        name: "oh-my-posh",
-    },
-    PackageSpec {
-        logical: "oh-my-posh",
-        manager: PackageManager::Pacman,
-        name: "oh-my-posh",
-    },
-    PackageSpec {
-        logical: "oh-my-posh",
-        manager: PackageManager::Brew,
-        name: "oh-my-posh",
-    },
-    PackageSpec {
-        logical: "oh-my-posh",
-        manager: PackageManager::Mise,
-        name: "oh-my-posh",
-    },
-    PackageSpec {
-        logical: "oh-my-posh",
-        manager: PackageManager::Winget,
-        name: "JanDeDobbeleer.OhMyPosh",
-    },
-    PackageSpec {
-        logical: "oh-my-posh",
-        manager: PackageManager::Scoop,
-        name: "oh-my-posh",
-    },
-];
+const OH_MY_POSH_PACKAGES: &[Package] = &[Package {
+    id: "oh-my-posh",
+    command: Some("oh-my-posh"),
+    sources: &[
+        PackageSource {
+            manager: PackageManager::Apt,
+            name: "oh-my-posh",
+        },
+        PackageSource {
+            manager: PackageManager::Dnf,
+            name: "oh-my-posh",
+        },
+        PackageSource {
+            manager: PackageManager::Pacman,
+            name: "oh-my-posh",
+        },
+        PackageSource {
+            manager: PackageManager::Brew,
+            name: "oh-my-posh",
+        },
+        PackageSource {
+            manager: PackageManager::Mise,
+            name: "oh-my-posh",
+        },
+        PackageSource {
+            manager: PackageManager::Winget,
+            name: "JanDeDobbeleer.OhMyPosh",
+        },
+        PackageSource {
+            manager: PackageManager::Scoop,
+            name: "oh-my-posh",
+        },
+    ],
+}];
 
 const OH_MY_POSH_CONFIG_ASSET: EmbeddedAsset = EmbeddedAsset::new(
     "oh-my-posh/oh-my-posh.config.json",

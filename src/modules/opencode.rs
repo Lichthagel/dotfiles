@@ -2,7 +2,7 @@ use super::{CROSS_PLATFORM, NO_REQUIREMENTS};
 use crate::error::{InstallError, Result};
 use crate::model::{EmbeddedSecretBundle, PackageManager, Platform};
 use crate::platform::PlatformOps;
-use crate::registry::{ModuleSpec, PackageSpec};
+use crate::registry::{ModuleSpec, Package, PackageSource};
 use crate::secrets::{SecretMode, SecretValues};
 use crate::setup::http::MAX_THEME_FILE_BYTES;
 use crate::setup::jsonc::JsoncDocument;
@@ -16,23 +16,24 @@ use zeroize::Zeroizing;
 const OPENCODE_SECRET_BUNDLE: EmbeddedSecretBundle =
     EmbeddedSecretBundle::new("OpenCode", include_bytes!("../../secrets/opencode.env.age"));
 
-const OPENCODE_PACKAGES: &[PackageSpec] = &[
-    PackageSpec {
-        logical: "opencode",
-        manager: PackageManager::Brew,
-        name: "anomalyco/tap/opencode",
-    },
-    PackageSpec {
-        logical: "opencode",
-        manager: PackageManager::Mise,
-        name: "github:anomalyco/opencode",
-    },
-    PackageSpec {
-        logical: "opencode",
-        manager: PackageManager::Scoop,
-        name: "opencode",
-    },
-];
+const OPENCODE_PACKAGES: &[Package] = &[Package {
+    id: "opencode",
+    command: Some("opencode"),
+    sources: &[
+        PackageSource {
+            manager: PackageManager::Brew,
+            name: "anomalyco/tap/opencode",
+        },
+        PackageSource {
+            manager: PackageManager::Mise,
+            name: "github:anomalyco/opencode",
+        },
+        PackageSource {
+            manager: PackageManager::Scoop,
+            name: "opencode",
+        },
+    ],
+}];
 
 pub const SPEC: ModuleSpec = ModuleSpec {
     id: "opencode",

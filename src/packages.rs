@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use crate::error::{InstallError, Result};
 use crate::model::{PackageManager, Platform};
 use crate::platform::{current_home, current_scoop_root, package_manager_program};
-use crate::registry::ModuleSpec;
+use crate::registry::{ModuleSpec, Package};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommandOutput {
@@ -603,7 +603,7 @@ impl ManagerAdapter for PackageManagerAdapter {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PackageAction {
-    pub logical: String,
+    pub package_id: String,
     pub module: String,
     pub manager: PackageManager,
     pub package_name: String,
@@ -638,37 +638,39 @@ pub fn build_package_plan(
     modules: &[&ModuleSpec],
     _noninteractive: bool,
 ) -> Result<PackagePlan> {
-    let mut candidates_by_logical = BTreeMap::<String, Vec<PackageCandidate>>::new();
-    let mut owners = BTreeMap::<String, String>::new();
+    let mut packages_by_id = BTreeMap::<&str, Vec<(&str, &Package)>>::new();
     for module in modules {
-        for package in module
-            .packages
-            .iter()
-            .filter(|package| package.manager.is_supported_on(platform))
-        {
-            candidates_by_logical
-                .entry(package.logical.to_owned())
+        for package in module.packages.iter().filter(|package| {
+            package
+                .sources
+                .iter()
+                .any(|source| source.manager.is_supported_on(platform))
+        }) {
+            packages_by_id
+                .entry(package.id)
                 .or_default()
-                .push(PackageCandidate {
-                    manager: package.manager,
-                    package_name: package.name.to_owned(),
-                });
-            owners
-                .entry(package.logical.to_owned())
-                .or_insert_with(|| module.id.to_owned());
+                .push((module.id, package));
         }
     }
 
     let mut alternatives = BTreeMap::new();
     let mut actions = Vec::new();
-    for (logical, candidates) in candidates_by_logical {
-        if runner.available(&logical) {
+    for (package_id, packages) in packages_by_id {
+        if packages.iter().any(|(_, package)| {
+            package
+                .command
+                .is_some_and(|command| runner.available(command))
+        }) {
             continue;
         }
-        let available = candidates
-            .into_iter()
-            .filter(|candidate| {
-                PackageManagerAdapter::new(platform, candidate.manager).available(runner)
+        let available = packages
+            .iter()
+            .flat_map(|(_, package)| package.sources)
+            .filter(|source| source.manager.is_supported_on(platform))
+            .filter(|source| PackageManagerAdapter::new(platform, source.manager).available(runner))
+            .map(|source| PackageCandidate {
+                manager: source.manager,
+                package_name: source.name.to_owned(),
             })
             .collect::<Vec<_>>();
         if available.is_empty() {
@@ -678,7 +680,7 @@ pub fn build_package_plan(
                 .collect::<Vec<_>>()
                 .join(", ");
             return Err(InstallError::Package(format!(
-                "no supported package manager is available for {logical}; supported managers: {supported}"
+                "no supported package manager is available for {package_id}; supported managers: {supported}"
             )));
         }
         let installed = available.iter().try_fold(false, |installed, candidate| {
@@ -688,7 +690,7 @@ pub fn build_package_plan(
             PackageManagerAdapter::new(platform, candidate.manager)
                 .installed(runner, &candidate.package_name)
         })?;
-        alternatives.insert(logical.clone(), available.clone());
+        alternatives.insert(package_id.to_owned(), available.clone());
         if installed {
             continue;
         }
@@ -701,15 +703,12 @@ pub fn build_package_plan(
             })
             .ok_or_else(|| {
                 InstallError::Package(format!(
-                    "no prioritized package manager is available for {logical}"
+                    "no prioritized package manager is available for {package_id}"
                 ))
             })?;
         actions.push(PackageAction {
-            logical: logical.clone(),
-            module: owners
-                .get(&logical)
-                .cloned()
-                .unwrap_or_else(|| logical.clone()),
+            package_id: package_id.to_owned(),
+            module: packages[0].0.to_owned(),
             manager: selected.manager,
             package_name: selected.package_name.clone(),
             selected: true,

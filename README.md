@@ -26,14 +26,13 @@ versioned downloads; the bootstrap always installs the current build. Set
 passes the current PowerShell `$PROFILE` through `DOTFILES_PROFILE` so profile
 mappings work when the binary is run outside PowerShell.
 
-HTTPS uses native TLS and the system certificate store: Schannel on Windows
-and dynamically linked OpenSSL on Linux. Linux systems need a populated CA
-certificate store and the OpenSSL shared-library ABI used to build the binary.
-Published Linux artifacts use the Ubuntu CI runner's OpenSSL ABI. For example,
-a build linked against OpenSSL 3 needs `libssl.so.3` and `libcrypto.so.3`; a
-different major version is not a substitute. These runtime libraries are required
-even when OpenCode is not selected. Windows does not require a separate OpenSSL
-installation. See [Contributing](CONTRIBUTING.md) for Linux build dependencies.
+OpenCode theme downloads reuse the installed `curl` executable (`curl.exe` on
+Windows), including its TLS backend and default certificate verification. Curl
+and a working certificate trust store are required when selecting OpenCode;
+other modules do not need an HTTP downloader. The Linux bootstrap already uses
+curl. The installer binary does not link OpenSSL or embed an HTTP/TLS stack.
+User curl configuration files are ignored to preserve download safeguards.
+See [Contributing](CONTRIBUTING.md) for test dependencies.
 
 For a local development build:
 

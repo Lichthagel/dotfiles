@@ -2,21 +2,20 @@
 
 ## Test Requirements
 
-Linux builds require `pkg-config`, OpenSSL development headers/libraries, and
-system CA certificates. Install them before running Cargo:
+HTTP tests use the installed `curl` executable (`curl.exe` on Windows) against
+local fixture servers. Install curl and system CA certificates on Linux:
 
 ```sh
 # Debian/Ubuntu
-sudo apt-get install pkg-config libssl-dev ca-certificates
+sudo apt-get install curl ca-certificates
 # Fedora
-sudo dnf install pkgconf-pkg-config openssl-devel ca-certificates
+sudo dnf install curl ca-certificates
 ```
 
-Windows uses Schannel and the system certificate store; no OpenSSL development
-package is needed. Linux artifacts dynamically link to the build machine's
-OpenSSL ABI, so verify runtime compatibility when distributing local builds.
-Do not enable vendored OpenSSL just to avoid installing build dependencies;
-that would put the TLS implementation back into the executable.
+Windows runners use `curl.exe`, not PowerShell's `curl` alias. Rust compilation
+requires no OpenSSL development package; the installer does not link an HTTP/TLS
+library. OpenCode downloads need curl at runtime and use its TLS backend and
+default certificate verification.
 
 Run the complete local Rust matrix before opening a change:
 
@@ -85,10 +84,13 @@ Release builds use size optimization (`opt-level = "z"`), full LTO, a single
 codegen unit, and symbol stripping, as configured in `Cargo.toml`. Panic
 unwinding remains enabled so terminal and secret guards can run their destructors.
 Clap retains help, usage, and error context without optional color or typo
-suggestions. HTTP downloads use synchronous `ureq` with native TLS and the
-system certificate store (OpenSSL on Linux, Schannel on Windows), with no
-optional compression or JSON features. Certificate and hostname verification
-remain enabled; JSON validation stays in `serde_json`.
+suggestions. HTTP downloads invoke the installed curl directly with argument
+arrays, never through a shell. User curlrc files and URL globbing are disabled;
+initial and redirected URLs are restricted to HTTP/HTTPS. Certificate and
+hostname verification remain enabled, while JSON validation stays in
+`serde_json`. Curl enforces connection/total timeouts and a file-size limit;
+Rust additionally caps streamed body bytes and drains bounded diagnostics to
+avoid unbounded memory use or subprocess pipe deadlocks.
 
 Build and compare native release artifacts when changing these settings or
 network dependencies:

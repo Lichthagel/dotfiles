@@ -49,6 +49,9 @@ impl CloneRunner {
 impl CommandRunner for CloneRunner {
     fn available(&self, program: &str) -> bool {
         self.available.lock().unwrap().contains(program)
+            || (program == "brew"
+                && std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+                    .any(|entry| entry.join("brew").is_file()))
     }
 
     fn run(
@@ -109,6 +112,67 @@ fn existing_homebrew_needs_no_bootstrap() {
 
     install_homebrew(&context(&fixture, &runner, &http)).unwrap();
     assert!(runner.calls().is_empty());
+}
+
+#[test]
+fn existing_homebrew_install_is_rediscovered_and_path_is_not_duplicated() {
+    let _guard = ENV_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let prefix_root = tempfile::tempdir().unwrap();
+    let prefix = prefix_root.path().join("linuxbrew");
+    fs::create_dir_all(prefix.join("bin")).unwrap();
+    fs::create_dir_all(prefix.join("sbin")).unwrap();
+    fs::write(prefix.join("bin/brew"), b"brew").unwrap();
+    let old_prefix = std::env::var_os("DOTFILES_HOMEBREW_PREFIX");
+    let old_path = std::env::var_os("PATH");
+    std::env::set_var("DOTFILES_HOMEBREW_PREFIX", &prefix);
+    std::env::set_var("PATH", "/usr/bin:/usr/bin");
+
+    let runner = CloneRunner::new(&["git"]);
+    let fixture = MappingFixture::with_platform(Platform::Linux);
+    let http = NoHttp;
+    install_homebrew(&context(&fixture, &runner, &http)).unwrap();
+    let first_path = std::env::split_paths(&std::env::var_os("PATH").unwrap()).collect::<Vec<_>>();
+    install_homebrew(&context(&fixture, &runner, &http)).unwrap();
+    let second_path = std::env::split_paths(&std::env::var_os("PATH").unwrap()).collect::<Vec<_>>();
+
+    assert_eq!(first_path, second_path);
+    assert_eq!(first_path[0], prefix.join("bin"));
+    assert_eq!(first_path[1], prefix.join("sbin"));
+    assert_eq!(
+        first_path[2..],
+        [PathBuf::from("/usr/bin"), PathBuf::from("/usr/bin")]
+    );
+    assert_eq!(runner.calls().len(), 1);
+    assert_eq!(runner.calls()[0], ("brew".into(), vec!["--version".into()]));
+
+    restore_env("DOTFILES_HOMEBREW_PREFIX", old_prefix);
+    restore_env("PATH", old_path);
+}
+
+#[test]
+fn invalid_existing_homebrew_root_is_not_overwritten_or_cloned_into() {
+    let _guard = ENV_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let prefix_root = tempfile::tempdir().unwrap();
+    let prefix = prefix_root.path().join("linuxbrew");
+    fs::create_dir_all(&prefix).unwrap();
+    fs::write(prefix.join("keep"), b"user data").unwrap();
+    let old_prefix = std::env::var_os("DOTFILES_HOMEBREW_PREFIX");
+    std::env::set_var("DOTFILES_HOMEBREW_PREFIX", &prefix);
+
+    let runner = CloneRunner::new(&["git"]);
+    let fixture = MappingFixture::with_platform(Platform::Linux);
+    let http = NoHttp;
+    assert!(install_homebrew(&context(&fixture, &runner, &http)).is_err());
+    assert!(runner.calls().is_empty());
+    assert_eq!(fs::read(prefix.join("keep")).unwrap(), b"user data");
+
+    restore_env("DOTFILES_HOMEBREW_PREFIX", old_prefix);
 }
 
 #[test]
@@ -221,6 +285,63 @@ fn scoop_bootstrap_and_package_adapter_share_dotfiles_home_root() {
     restore_env("DOTFILES_SCOOP_ROOT", old_scoop_root);
     restore_env("SCOOP", old_scoop);
     restore_env("PATH", old_path);
+}
+
+#[test]
+fn existing_scoop_install_is_rediscovered_and_path_is_not_duplicated() {
+    let _guard = ENV_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let root = tempfile::tempdir().unwrap();
+    let current = root.path().join("apps/scoop/current");
+    fs::create_dir_all(current.join("bin")).unwrap();
+    fs::write(current.join("bin/scoop.ps1"), b"Write-Output scoop\n").unwrap();
+    let old_root = std::env::var_os("DOTFILES_SCOOP_ROOT");
+    let old_path = std::env::var_os("PATH");
+    std::env::set_var("DOTFILES_SCOOP_ROOT", root.path());
+    std::env::set_var("PATH", "/usr/bin");
+
+    let runner = CloneRunner::new(&["git", "pwsh"]);
+    let fixture = MappingFixture::with_platform(Platform::Windows);
+    let http = NoHttp;
+    install_scoop(&context(&fixture, &runner, &http)).unwrap();
+    let first_path = std::env::split_paths(&std::env::var_os("PATH").unwrap()).collect::<Vec<_>>();
+    install_scoop(&context(&fixture, &runner, &http)).unwrap();
+    let second_path = std::env::split_paths(&std::env::var_os("PATH").unwrap()).collect::<Vec<_>>();
+
+    assert_eq!(first_path, second_path);
+    assert_eq!(first_path[0], root.path().join("shims"));
+    assert_eq!(runner.calls().len(), 2);
+    assert!(runner.calls().iter().all(|(program, args)| {
+        program == "pwsh" && args.last().is_some_and(|arg| arg == "--version")
+    }));
+
+    restore_env("DOTFILES_SCOOP_ROOT", old_root);
+    restore_env("PATH", old_path);
+}
+
+#[test]
+fn invalid_existing_scoop_installation_is_not_overwritten() {
+    let _guard = ENV_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let root = tempfile::tempdir().unwrap();
+    let current = root.path().join("apps/scoop/current");
+    fs::create_dir_all(&current).unwrap();
+    fs::write(current.join("keep"), b"user data").unwrap();
+    let old_root = std::env::var_os("DOTFILES_SCOOP_ROOT");
+    std::env::set_var("DOTFILES_SCOOP_ROOT", root.path());
+
+    let runner = CloneRunner::new(&["git", "pwsh"]);
+    let fixture = MappingFixture::with_platform(Platform::Windows);
+    let http = NoHttp;
+    assert!(install_scoop(&context(&fixture, &runner, &http)).is_err());
+    assert!(runner.calls().is_empty());
+    assert_eq!(fs::read(current.join("keep")).unwrap(), b"user data");
+
+    restore_env("DOTFILES_SCOOP_ROOT", old_root);
 }
 
 #[test]

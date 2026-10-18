@@ -2,6 +2,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use zeroize::Zeroizing;
 
 use crate::error::{InstallError, Result};
 use crate::model::{PackageManager, Platform, Target};
@@ -32,6 +33,19 @@ impl PathContext {
 pub struct BackupRecord {
     pub target: PathBuf,
     pub backup: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FileChange {
+    Unchanged,
+    Content { backup: Option<PathBuf> },
+    Permissions,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FileApplyResult {
+    pub target: PathBuf,
+    pub change: FileChange,
 }
 
 pub fn package_manager_program(
@@ -101,14 +115,54 @@ pub trait PlatformOps {
         replace_file_at_with_timestamp(self.path_context(), target, bytes, false, timestamp)
     }
     fn replace_private_file(&self, target: &Path, bytes: &[u8]) -> Result<BackupRecord> {
+        self.replace_private_file_with_timestamp(target, bytes, &SystemTimestamp)
+    }
+    fn replace_private_file_with_timestamp(
+        &self,
+        target: &Path,
+        bytes: &[u8],
+        timestamp: &dyn TimestampProvider,
+    ) -> Result<BackupRecord> {
         replace_private_file_at_with_timestamp(
             self.path_context(),
             target,
             bytes,
             false,
-            &SystemTimestamp,
+            timestamp,
             &|path| self.set_private_file_permissions(path),
         )
+    }
+    fn ensure_file(&self, target: &Path, bytes: &[u8]) -> Result<FileApplyResult> {
+        self.ensure_file_with_timestamp(target, bytes, &SystemTimestamp)
+    }
+    fn ensure_file_with_timestamp(
+        &self,
+        target: &Path,
+        bytes: &[u8],
+        timestamp: &dyn TimestampProvider,
+    ) -> Result<FileApplyResult> {
+        let replace = |path: &Path, content: &[u8], time: &dyn TimestampProvider| {
+            self.replace_file_with_timestamp(path, content, time)
+        };
+        ensure_file_at_with_timestamp(target, bytes, timestamp, &replace, None, None)
+    }
+    fn ensure_private_file(&self, target: &Path, bytes: &[u8]) -> Result<FileApplyResult> {
+        let replace = |path: &Path, content: &[u8], time: &dyn TimestampProvider| {
+            self.replace_private_file_with_timestamp(path, content, time)
+        };
+        let protect = |path: &Path| self.set_private_file_permissions(path);
+        let inspect = |path: &Path| self.private_file_permissions_are_correct(path);
+        ensure_file_at_with_timestamp(
+            target,
+            bytes,
+            &SystemTimestamp,
+            &replace,
+            Some(&protect),
+            Some(&inspect),
+        )
+    }
+    fn private_file_permissions_are_correct(&self, path: &Path) -> Result<bool> {
+        private_permissions_are_correct(path)
     }
     fn set_private_file_permissions(&self, path: &Path) -> Result<()>;
 }
@@ -163,6 +217,68 @@ fn relative_backup_path(context: &PathContext, target: &Path) -> PathBuf {
         }
     }
     relative
+}
+
+type FileReplacement<'a> =
+    dyn Fn(&Path, &[u8], &dyn TimestampProvider) -> Result<BackupRecord> + 'a;
+type FileProtector<'a> = dyn Fn(&Path) -> Result<()> + 'a;
+type PermissionInspector<'a> = dyn Fn(&Path) -> Result<bool> + 'a;
+
+fn ensure_file_at_with_timestamp(
+    target: &Path,
+    bytes: &[u8],
+    timestamp: &dyn TimestampProvider,
+    replace: &FileReplacement<'_>,
+    protect: Option<&FileProtector<'_>>,
+    inspect_private: Option<&PermissionInspector<'_>>,
+) -> Result<FileApplyResult> {
+    if protect.is_some() != inspect_private.is_some() {
+        return Err(InstallError::Mapping(
+            "private replacement requires both permission operations".into(),
+        ));
+    }
+    let presence = fs::symlink_metadata(target);
+    match presence {
+        Ok(metadata) if metadata.file_type().is_file() => {
+            let contents_match = if inspect_private.is_some() {
+                Zeroizing::new(fs::read(target)?).as_slice() == bytes
+            } else {
+                fs::read(target)? == bytes
+            };
+            if contents_match {
+                if let Some(inspect) = inspect_private {
+                    if !inspect(target)? {
+                        protect.expect("private inspection requires a protector")(target)?;
+                        if !inspect(target)? {
+                            return Err(InstallError::Mapping(format!(
+                                "private permissions remain unsafe: {}",
+                                target.display()
+                            )));
+                        }
+                        return Ok(FileApplyResult {
+                            target: target.to_path_buf(),
+                            change: FileChange::Permissions,
+                        });
+                    }
+                }
+                return Ok(FileApplyResult {
+                    target: target.to_path_buf(),
+                    change: FileChange::Unchanged,
+                });
+            }
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+
+    let record = replace(target, bytes, timestamp)?;
+    Ok(FileApplyResult {
+        target: record.target,
+        change: FileChange::Content {
+            backup: record.backup,
+        },
+    })
 }
 
 pub fn replace_file_at(
@@ -327,6 +443,25 @@ fn replace_file_at_with_timestamp_internal(
 }
 
 #[cfg(unix)]
+fn private_permissions_are_correct(path: &Path) -> Result<bool> {
+    use std::os::unix::fs::PermissionsExt;
+
+    Ok(fs::metadata(path)?.permissions().mode() & 0o7777 == 0o600)
+}
+
+#[cfg(windows)]
+fn private_permissions_are_correct(path: &Path) -> Result<bool> {
+    windows_private_permissions_are_correct(path)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn private_permissions_are_correct(_path: &Path) -> Result<bool> {
+    Err(InstallError::Mapping(
+        "private permissions are unsupported on this platform".into(),
+    ))
+}
+
+#[cfg(unix)]
 pub(crate) fn set_private_permissions(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
@@ -334,6 +469,160 @@ pub(crate) fn set_private_permissions(path: &Path) -> Result<()> {
     permissions.set_mode(0o600);
     fs::set_permissions(path, permissions)?;
     Ok(())
+}
+
+#[cfg(windows)]
+fn windows_private_permissions_are_correct(path: &Path) -> Result<bool> {
+    use std::mem::zeroed;
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr::{null, null_mut};
+    use windows_sys::Win32::Foundation::{
+        GetLastError, LocalFree, ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS,
+    };
+    use windows_sys::Win32::Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT};
+    use windows_sys::Win32::Security::{
+        AclSizeInformation, EqualSid, GetAce, GetAclInformation, GetSecurityDescriptorControl,
+        GetSecurityDescriptorDacl, LookupAccountNameW, ACCESS_ALLOWED_ACE, ACE_HEADER,
+        ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION, SE_DACL_PROTECTED, SID_NAME_USE,
+    };
+    use windows_sys::Win32::Storage::FileSystem::FILE_ALL_ACCESS;
+    use windows_sys::Win32::System::WindowsProgramming::GetUserNameW;
+
+    let mut username = [0u16; 256];
+    let mut username_len = username.len() as u32;
+    if unsafe { GetUserNameW(username.as_mut_ptr(), &mut username_len) } == 0 {
+        return Err(InstallError::Mapping(format!(
+            "could not determine current Windows user: {}",
+            io::Error::last_os_error()
+        )));
+    }
+    let mut sid_len = 0u32;
+    let mut domain_len = 0u32;
+    let mut use_type: SID_NAME_USE = unsafe { zeroed() };
+    let found = unsafe {
+        LookupAccountNameW(
+            null(),
+            username.as_ptr(),
+            null_mut(),
+            &mut sid_len,
+            null_mut(),
+            &mut domain_len,
+            &mut use_type,
+        )
+    };
+    if found != 0 || unsafe { GetLastError() } != ERROR_INSUFFICIENT_BUFFER {
+        return Err(InstallError::Mapping(format!(
+            "could not resolve current Windows user SID: {}",
+            io::Error::last_os_error()
+        )));
+    }
+    let mut sid_storage = vec![0u32; sid_len.div_ceil(4) as usize];
+    let mut domain = vec![0u16; domain_len as usize];
+    if unsafe {
+        LookupAccountNameW(
+            null(),
+            username.as_ptr(),
+            sid_storage.as_mut_ptr().cast(),
+            &mut sid_len,
+            domain.as_mut_ptr(),
+            &mut domain_len,
+            &mut use_type,
+        )
+    } == 0
+    {
+        return Err(InstallError::Mapping(format!(
+            "could not resolve current Windows user SID: {}",
+            io::Error::last_os_error()
+        )));
+    }
+
+    let mut wide_path: Vec<u16> = path.as_os_str().encode_wide().collect();
+    wide_path.push(0);
+    let mut descriptor = null_mut();
+    let status = unsafe {
+        GetNamedSecurityInfoW(
+            wide_path.as_mut_ptr(),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            null_mut(),
+            null_mut(),
+            null_mut(),
+            null_mut(),
+            &mut descriptor,
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return Err(InstallError::Mapping(format!(
+            "could not inspect private Windows ACL: {status}"
+        )));
+    }
+
+    let result = (|| {
+        let mut control = 0u16;
+        let mut revision = 0u32;
+        if unsafe { GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) } == 0 {
+            return Err(InstallError::Mapping(format!(
+                "could not inspect private Windows ACL control: {}",
+                io::Error::last_os_error()
+            )));
+        }
+        if control & SE_DACL_PROTECTED == 0 {
+            return Ok(false);
+        }
+        let mut present = 0;
+        let mut acl = null_mut();
+        let mut defaulted = 0;
+        if unsafe { GetSecurityDescriptorDacl(descriptor, &mut present, &mut acl, &mut defaulted) }
+            == 0
+        {
+            return Err(InstallError::Mapping(format!(
+                "could not inspect private Windows DACL: {}",
+                io::Error::last_os_error()
+            )));
+        }
+        if present == 0 || acl.is_null() {
+            return Ok(false);
+        }
+        let mut information: ACL_SIZE_INFORMATION = unsafe { zeroed() };
+        if unsafe {
+            GetAclInformation(
+                acl,
+                (&mut information as *mut ACL_SIZE_INFORMATION).cast(),
+                std::mem::size_of::<ACL_SIZE_INFORMATION>() as u32,
+                AclSizeInformation,
+            )
+        } == 0
+        {
+            return Err(InstallError::Mapping(format!(
+                "could not inspect private Windows ACL entries: {}",
+                io::Error::last_os_error()
+            )));
+        }
+        if information.AceCount != 1 {
+            return Ok(false);
+        }
+        let mut ace_pointer = null_mut();
+        if unsafe { GetAce(acl, 0, &mut ace_pointer) } == 0 {
+            return Err(InstallError::Mapping(format!(
+                "could not inspect private Windows ACL entry: {}",
+                io::Error::last_os_error()
+            )));
+        }
+        let header = unsafe { &*ace_pointer.cast::<ACE_HEADER>() };
+        if header.AceType != 0 || header.AceFlags != 0 {
+            return Ok(false);
+        }
+        let ace = unsafe { &*ace_pointer.cast::<ACCESS_ALLOWED_ACE>() };
+        if ace.Mask != FILE_ALL_ACCESS {
+            return Ok(false);
+        }
+        let ace_sid = (&ace.SidStart as *const u32).cast_mut().cast();
+        Ok(unsafe { EqualSid(ace_sid, sid_storage.as_mut_ptr().cast()) != 0 })
+    })();
+    unsafe {
+        LocalFree(descriptor.cast());
+    }
+    result
 }
 
 #[cfg(windows)]
@@ -539,6 +828,44 @@ pub fn file_exists_or_symlink(path: &Path) -> bool {
 mod tests {
     use super::target_presence;
     use std::io;
+
+    #[test]
+    fn private_permission_inspection_errors_propagate_without_replacement() {
+        use super::{
+            ensure_file_at_with_timestamp, BackupRecord, Path, Result, SystemTimestamp,
+            TimestampProvider,
+        };
+        use std::fs;
+        use tempfile::tempdir;
+
+        let temp = tempdir().unwrap();
+        let target = temp.path().join("credential");
+        fs::write(&target, b"secret").unwrap();
+        let replace =
+            |_path: &Path,
+             _bytes: &[u8],
+             _timestamp: &dyn TimestampProvider|
+             -> Result<BackupRecord> { panic!("equal content must not be replaced") };
+        let protect = |_path: &Path| Ok(());
+        let inspect = |_path: &Path| {
+            Err(super::InstallError::Mapping(
+                "permission inspection denied".into(),
+            ))
+        };
+
+        let error = ensure_file_at_with_timestamp(
+            &target,
+            b"secret",
+            &SystemTimestamp,
+            &replace,
+            Some(&protect),
+            Some(&inspect),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("permission inspection denied"));
+        assert_eq!(fs::read(target).unwrap(), b"secret");
+    }
 
     #[test]
     fn metadata_errors_are_not_treated_as_absence() {

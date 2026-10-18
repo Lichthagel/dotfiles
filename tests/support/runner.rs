@@ -14,9 +14,10 @@ pub struct Invocation {
 #[derive(Clone, Debug)]
 pub struct FakeRunner {
     available: Arc<Mutex<BTreeSet<String>>>,
-    installed: HashSet<(String, String)>,
+    installed: Arc<Mutex<HashSet<(String, String)>>>,
+
     fail_programs: BTreeSet<String>,
-    atuin_status: Option<bool>,
+    atuin_status: Arc<Mutex<Option<bool>>>,
     calls: Arc<Mutex<Vec<Invocation>>>,
     refreshes: Arc<Mutex<usize>>,
     refresh_additions: Arc<Mutex<BTreeSet<String>>>,
@@ -31,9 +32,9 @@ impl FakeRunner {
     {
         Self {
             available: Arc::new(Mutex::new(programs.into_iter().map(Into::into).collect())),
-            installed: HashSet::new(),
+            installed: Arc::new(Mutex::new(HashSet::new())),
             fail_programs: BTreeSet::new(),
-            atuin_status: None,
+            atuin_status: Arc::new(Mutex::new(None)),
             calls: Arc::new(Mutex::new(Vec::new())),
             refreshes: Arc::new(Mutex::new(0)),
             refresh_additions: Arc::new(Mutex::new(BTreeSet::new())),
@@ -50,12 +51,14 @@ impl FakeRunner {
     {
         Self {
             available: Arc::new(Mutex::new(programs.into_iter().map(Into::into).collect())),
-            installed: installed
-                .into_iter()
-                .map(|(manager, package)| (manager.into(), package.into()))
-                .collect(),
+            installed: Arc::new(Mutex::new(
+                installed
+                    .into_iter()
+                    .map(|(manager, package)| (manager.into(), package.into()))
+                    .collect(),
+            )),
             fail_programs: BTreeSet::new(),
-            atuin_status: None,
+            atuin_status: Arc::new(Mutex::new(None)),
             calls: Arc::new(Mutex::new(Vec::new())),
             refreshes: Arc::new(Mutex::new(0)),
             refresh_additions: Arc::new(Mutex::new(BTreeSet::new())),
@@ -82,15 +85,19 @@ impl FakeRunner {
     }
 
     pub fn atuin_not_logged_in() -> Self {
-        let mut runner = Self::available(["atuin"]);
-        runner.atuin_status = Some(false);
+        let runner = Self::available(["atuin"]);
+        *runner.atuin_status.lock().unwrap() = Some(false);
         runner
     }
 
     pub fn atuin_logged_in() -> Self {
-        let mut runner = Self::available(["atuin"]);
-        runner.atuin_status = Some(true);
+        let runner = Self::available(["atuin"]);
+        *runner.atuin_status.lock().unwrap() = Some(true);
         runner
+    }
+
+    pub fn set_atuin_logged_in(&self, logged_in: bool) {
+        *self.atuin_status.lock().unwrap() = Some(logged_in);
     }
 
     pub fn add_available(&self, program: &str) {
@@ -148,13 +155,24 @@ impl FakeRunner {
         })
     }
 
+    pub fn mark_installed(&self, manager: &str, package: &str) {
+        self.installed
+            .lock()
+            .unwrap()
+            .insert((manager.to_owned(), package.to_owned()));
+    }
+
     fn installed_for(&self, manager: &str, package: &str) -> bool {
         self.installed
+            .lock()
+            .unwrap()
             .contains(&(manager.to_owned(), package.to_owned()))
     }
 
     fn installed_names(&self, manager: &str) -> Vec<String> {
         self.installed
+            .lock()
+            .unwrap()
             .iter()
             .filter(|(installed_manager, _)| installed_manager == manager)
             .map(|(_, package)| package.clone())
@@ -247,7 +265,7 @@ impl CommandRunner for FakeRunner {
             || (program == "mise" && args.first().is_some_and(|arg| arg == "list"));
         if program == "atuin" && args.first().map(String::as_str) == Some("status") {
             return Ok(CommandOutput {
-                status: if self.atuin_status.unwrap_or(false) {
+                status: if self.atuin_status.lock().unwrap().unwrap_or(false) {
                     0
                 } else {
                     1

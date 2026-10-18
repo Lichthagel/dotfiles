@@ -177,6 +177,25 @@ mod tests {
     }
 
     #[test]
+    fn recording_an_existing_module_does_not_rewrite_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let platform = platform(temp.path());
+        {
+            let mut store = StateStore::open(&platform).unwrap();
+            store.record("git").unwrap();
+        }
+        let path = platform.state_path().unwrap();
+        let before = fs::read(&path).unwrap();
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+
+        let mut store = StateStore::open(&platform).unwrap();
+        store.record("git").unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), modified);
+    }
+
+    #[test]
     fn invalid_or_unsupported_state_is_not_overwritten() {
         let temp = tempfile::tempdir().unwrap();
         let platform = platform(temp.path());

@@ -5,13 +5,18 @@ use std::sync::{Mutex, OnceLock};
 
 use dotfiles::cli::{TerminalIo, TerminalKey};
 use dotfiles::error::Result;
-use dotfiles::model::SecretBundle;
+use dotfiles::model::EmbeddedSecretBundle;
 use dotfiles::secrets::{
     decrypt_bundle, decrypt_bundle_with_prompt, required_values, IdentityPrompt, IdentitySource,
     SecretMode, TerminalIdentityPrompt,
 };
 use support::secrets::{EncryptedFixture, TempRootGuard};
 use zeroize::Zeroizing;
+
+const ATUIN_TEST_BUNDLE: EmbeddedSecretBundle =
+    EmbeddedSecretBundle::new("Atuin", b"synthetic Atuin payload");
+const OPENCODE_TEST_BUNDLE: EmbeddedSecretBundle =
+    EmbeddedSecretBundle::new("OpenCode", b"synthetic OpenCode payload");
 
 fn environment_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -24,7 +29,7 @@ fn decrypts_embedded_style_age_payload_without_creating_plaintext_files() {
     let temp_root = TempRootGuard::new();
     let fixture = EncryptedFixture::new("ATUIN_USERNAME=test-user\nATUIN_PASSWORD=test-pass\n");
     let scope = decrypt_bundle(
-        SecretBundle::Atuin,
+        ATUIN_TEST_BUNDLE,
         fixture.payload(),
         &fixture.identity(),
         SecretMode::Required,
@@ -47,7 +52,7 @@ fn direct_environment_identity_is_resolved_without_writing_it() {
     let source = IdentitySource::from_environment().unwrap();
     assert!(matches!(source, IdentitySource::Direct(_)));
     let scope = decrypt_bundle(
-        SecretBundle::Atuin,
+        ATUIN_TEST_BUNDLE,
         fixture.payload(),
         &source,
         SecretMode::Required,
@@ -68,7 +73,7 @@ fn identity_file_and_default_identity_path_are_supported() {
     fixture.write_identity(&identity_path);
     let source = IdentitySource::File(identity_path.clone());
     let scope = decrypt_bundle(
-        SecretBundle::Atuin,
+        ATUIN_TEST_BUNDLE,
         fixture.payload(),
         &source,
         SecretMode::Required,
@@ -93,7 +98,7 @@ fn identity_file_and_default_identity_path_are_supported() {
     let source = IdentitySource::from_environment().unwrap();
     assert!(matches!(source, IdentitySource::Default));
     let scope = decrypt_bundle(
-        SecretBundle::Atuin,
+        ATUIN_TEST_BUNDLE,
         fixture.payload(),
         &source,
         SecretMode::Required,
@@ -122,7 +127,7 @@ fn interactive_identity_prompt_accepts_a_path_or_direct_key() {
             .unwrap()
             .unwrap();
     let scope = decrypt_bundle(
-        SecretBundle::Atuin,
+        ATUIN_TEST_BUNDLE,
         fixture.payload(),
         &IdentitySource::Direct(Zeroizing::new(fixture.identity_text().to_owned())),
         SecretMode::Required,
@@ -194,7 +199,7 @@ fn nonmatching_identity_prompts_for_a_decrypting_identity() {
     let mut prompt = Prompt::new(payload_fixture.identity_text().to_owned());
 
     let scope = decrypt_bundle_with_prompt(
-        SecretBundle::Atuin,
+        ATUIN_TEST_BUNDLE,
         payload_fixture.payload(),
         &IdentitySource::File(identity_path),
         SecretMode::Optional,
@@ -211,7 +216,7 @@ fn missing_optional_identity_skips_and_required_identity_fails() {
     let fixture = EncryptedFixture::new("KEY=value\n");
     let missing = IdentitySource::File(PathBuf::from("missing-identity-file"));
     assert!(decrypt_bundle(
-        SecretBundle::OpenCode,
+        OPENCODE_TEST_BUNDLE,
         fixture.payload(),
         &missing,
         SecretMode::Optional,
@@ -219,7 +224,7 @@ fn missing_optional_identity_skips_and_required_identity_fails() {
     .unwrap()
     .is_none());
     assert!(decrypt_bundle(
-        SecretBundle::Atuin,
+        ATUIN_TEST_BUNDLE,
         fixture.payload(),
         &missing,
         SecretMode::Required,
@@ -234,7 +239,7 @@ fn malformed_lines_and_invalid_names_are_rejected() {
         let temp_root = TempRootGuard::new();
         let fixture = EncryptedFixture::new(plaintext);
         assert!(decrypt_bundle(
-            SecretBundle::Atuin,
+            ATUIN_TEST_BUNDLE,
             fixture.payload(),
             &fixture.identity(),
             SecretMode::Required,
@@ -248,7 +253,7 @@ fn malformed_lines_and_invalid_names_are_rejected() {
 fn empty_required_values_are_rejected_but_comments_and_empty_lines_parse() {
     let fixture = EncryptedFixture::new("\n# comment\nKEY=\n");
     let scope = decrypt_bundle(
-        SecretBundle::Atuin,
+        ATUIN_TEST_BUNDLE,
         fixture.payload(),
         &fixture.identity(),
         SecretMode::Required,
@@ -262,7 +267,7 @@ fn empty_required_values_are_rejected_but_comments_and_empty_lines_parse() {
 fn malformed_secret_errors_do_not_include_values() {
     let fixture = EncryptedFixture::new("LEAK=do-not-print\nnot-an-assignment\n");
     let error = decrypt_bundle(
-        SecretBundle::Atuin,
+        ATUIN_TEST_BUNDLE,
         fixture.payload(),
         &fixture.identity(),
         SecretMode::Required,
@@ -295,7 +300,7 @@ fn terminal_identity_prompt_uses_terminal_line_input() {
 fn debug_output_redacts_secret_values() {
     let fixture = EncryptedFixture::new("KEY=do-not-print\n");
     let scope = decrypt_bundle(
-        SecretBundle::Atuin,
+        ATUIN_TEST_BUNDLE,
         fixture.payload(),
         &fixture.identity(),
         SecretMode::Required,

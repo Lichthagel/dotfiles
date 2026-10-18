@@ -57,9 +57,8 @@ src/
   main.rs                 CLI and exit-code handling
   cli.rs                  argument parsing and interactive mode
   registry.rs             typed module/package/mapping registry
-  assets.rs               embedded configuration and secret bytes
   engine.rs               dependency resolution and installation phases
-  secrets.rs              native age decryption and temporary secret scope
+  secrets.rs              age decryption, module-local bundle lookup, and temporary secret scope
   packages.rs             package-manager discovery and installation
   mappings.rs             target expansion, backup, and replacement
   setup/
@@ -77,7 +76,7 @@ are intentional:
 
 - The engine knows module semantics and installation order, not shell syntax or
   OS-specific path rules.
-- The registry contains typed data and references to embedded assets.
+- The registry contains typed data and references to module-local embedded assets.
 - Setup handlers are Rust functions selected from typed setup variants; there is
   no arbitrary setup-script execution path.
 - Platform adapters expose only operations that genuinely differ between Linux
@@ -114,9 +113,12 @@ Module definitions will be rewritten as typed Rust data. The old
 be retired after parity is verified, so there is only one runtime source of
 module behavior. The remaining source files stay in `modules/` because they are
 useful configuration artifacts and are the natural inputs to compile-time
-embedding. The registry will explicitly reference each asset with
-`include_bytes!` or `include_str!` (or an equivalent build-time embedding
-mechanism); it will not glob all files from `secrets/`.
+embedding. Each `src/modules/<name>.rs` file explicitly embeds its own static
+assets with `include_bytes!` or `include_str!` (or an equivalent build-time
+mechanism) and associates them with its mappings. Atuin and OpenCode embed their
+corresponding encrypted bundles from `secrets/` beside their module definitions.
+Each module's typed spec carries the bundle descriptor directly, and
+`src/secrets.rs` decrypts its bytes without globbing files.
 
 Only the encrypted `*.env.age` bundles are eligible for secret embedding.
 Plaintext local files such as `secrets/atuin.env` and
@@ -139,7 +141,7 @@ Conceptually, a module contains:
   manager-specific package name;
 - module requirements;
 - package-manager provider capability, when applicable;
-- optional encrypted secret bundle reference;
+- optional embedded secret bundle descriptor (diagnostic name plus encrypted bytes);
 - typed setup variant, if any;
 - typed mappings from platform to embedded asset and target.
 

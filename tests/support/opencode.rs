@@ -72,7 +72,7 @@ impl FakeHttp {
         *self.json.lock().unwrap() = Some(value);
     }
 
-    fn set_bytes(&self, key: &str, value: Vec<u8>) {
+    pub fn set_bytes(&self, key: &str, value: Vec<u8>) {
         self.bytes.lock().unwrap().insert(key.into(), value);
     }
 }

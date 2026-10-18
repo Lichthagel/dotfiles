@@ -2,8 +2,8 @@ mod support;
 
 use dotfiles::error::InstallError;
 use dotfiles::model::Platform;
+use dotfiles::modules::atuin::{login_atuin, setup_atuin};
 use dotfiles::secrets::SecretValues;
-use dotfiles::setup::atuin::{login_atuin, setup_atuin};
 use dotfiles::setup::{HttpClient, SetupContext};
 use support::mappings::MappingFixture;
 use support::runner::FakeRunner;
@@ -62,6 +62,44 @@ fn logged_in_atuin_skips_secret_login() {
     setup_atuin(&context).unwrap();
     assert_eq!(runner.calls().len(), 1);
     assert_eq!(runner.calls()[0].args, ["status"]);
+}
+
+#[test]
+fn repeated_atuin_setup_logs_in_once_then_skips_without_secrets() {
+    let runner = FakeRunner::atuin_not_logged_in();
+    let fixture = MappingFixture::with_platform(Platform::Linux);
+    let http = NoHttp;
+    let secrets = SecretValues::from_pairs([
+        ("ATUIN_USERNAME", "user"),
+        ("ATUIN_PASSWORD", "password"),
+        ("ATUIN_KEY", "encryption-key"),
+    ])
+    .unwrap();
+    let context = SetupContext {
+        platform: &fixture.ops,
+        runner: &runner,
+        http: &http,
+        secrets: Some(&secrets),
+    };
+    setup_atuin(&context).unwrap();
+
+    runner.set_atuin_logged_in(true);
+    let logged_in_context = SetupContext {
+        platform: &fixture.ops,
+        runner: &runner,
+        http: &http,
+        secrets: None,
+    };
+    setup_atuin(&logged_in_context).unwrap();
+
+    assert_eq!(
+        runner
+            .calls()
+            .iter()
+            .filter(|call| call.args.first().map(String::as_str) == Some("login"))
+            .count(),
+        1
+    );
 }
 
 #[test]

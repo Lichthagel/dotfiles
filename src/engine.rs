@@ -1,14 +1,14 @@
 use crate::cli::{select_packages, InstallRequest, PackageSelection, TerminalIo};
 use crate::error::{InstallError, Result};
 use crate::mappings::apply_module_mappings;
-use crate::model::{Platform, SetupKind};
+use crate::model::Platform;
 use crate::packages::{
     build_package_plan, install_package, CommandRunner, ManagerAdapter, PackageManagerAdapter,
 };
-use crate::platform::{PlatformOps, TimestampProvider};
+use crate::platform::{FileChange, PlatformOps, TimestampProvider};
 use crate::registry::{self, ModuleSpec};
-use crate::secrets::{decrypt_embedded, TerminalIdentityPrompt};
-use crate::setup::{run_setup, secret_mode, HttpClient, SetupContext};
+use crate::secrets::{decrypt_embedded, SecretMode, TerminalIdentityPrompt};
+use crate::setup::{run_setup, secret_request, HttpClient, SetupContext, SetupProbeContext};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub struct InstallContext<'a> {
@@ -268,24 +268,27 @@ pub fn install_with_registry(
         }
 
         let module = phase[0];
-        let secret_scope = if module.setup == SetupKind::Atuin
-            && crate::setup::atuin::atuin_is_logged_in(context.runner)?
-        {
-            None
-        } else if let (Some(bundle), Some(mode)) = (module.secret_bundle, secret_mode(module.setup))
-        {
-            let mut prompt = (module.setup == SetupKind::OpenCode
-                || context.terminal.is_interactive())
-            .then(|| TerminalIdentityPrompt::new(context.terminal));
-            decrypt_embedded(
-                bundle,
-                mode,
-                prompt
-                    .as_mut()
-                    .map(|prompt| prompt as &mut dyn crate::secrets::IdentityPrompt),
-            )?
-        } else {
-            None
+        let probe_context = SetupProbeContext {
+            platform: context.platform,
+            runner: context.runner,
+        };
+        let secret_scope = match (
+            module.secret_bundle,
+            secret_request(module.setup, &probe_context)?,
+        ) {
+            (Some(bundle), Some(mode)) => {
+                let mut prompt = (mode == SecretMode::Optional
+                    || context.terminal.is_interactive())
+                .then(|| TerminalIdentityPrompt::new(context.terminal));
+                decrypt_embedded(
+                    bundle,
+                    mode,
+                    prompt
+                        .as_mut()
+                        .map(|prompt| prompt as &mut dyn crate::secrets::IdentityPrompt),
+                )?
+            }
+            _ => None,
         };
         let setup_context = SetupContext {
             platform: context.platform,
@@ -309,17 +312,27 @@ pub fn install_with_registry(
                 module.id
             ))
         })?;
-        for backup in backups {
-            if let Some(path) = backup.backup {
-                context.terminal.write_line(&format!(
-                    "backed up: {} -> {}",
-                    backup.target.display(),
-                    path.display()
-                ))?;
+        for applied in backups {
+            match applied.change {
+                FileChange::Content { backup } => {
+                    if let Some(path) = backup {
+                        context.terminal.write_line(&format!(
+                            "backed up: {} -> {}",
+                            applied.target.display(),
+                            path.display()
+                        ))?;
+                    }
+                    context
+                        .terminal
+                        .write_line(&format!("installed: {}", applied.target.display()))?;
+                }
+                FileChange::Unchanged => context
+                    .terminal
+                    .write_line(&format!("unchanged: {}", applied.target.display()))?,
+                FileChange::Permissions => context
+                    .terminal
+                    .write_line(&format!("secured: {}", applied.target.display()))?,
             }
-            context
-                .terminal
-                .write_line(&format!("installed: {}", backup.target.display()))?;
         }
         context
             .terminal

@@ -52,25 +52,26 @@ protection rules can gate deployments. No GitHub Release is created.
 
 ## Adding a Module
 
-Add a typed `ModuleSpec` entry and its package/mapping declarations to
-`src/registry.rs`. Put human-editable static configuration under
-`modules/<name>/` and add an explicit `AssetId` reference in `src/assets.rs`.
-Mappings must use typed platform targets and list shell/profile requirements in
-the registry.
+Add `src/modules/<name>.rs` with a typed `SPEC` and its package/mapping
+declarations; declare the module in `src/modules/mod.rs` and add its `SPEC` to
+the explicit catalog in `src/registry.rs`. Put human-editable static
+configuration under `modules/<name>/` and embed each file beside its mapping in
+the Rust module with `include_bytes!`. Update `docs/modules.md` and add focused
+tests.
 
-If a module needs setup beyond package installation and asset mapping, add a
-focused Rust handler under `src/setup/` and dispatch it through `SetupKind`.
-Do not add arbitrary Bash or PowerShell setup hooks. Provider setup must use the
-explicit typed adapter boundary and must not evaluate downloaded installer
-scripts.
+If a module needs setup beyond package installation and asset mapping, colocate
+its typed Rust handler with the module or reuse shared operations under
+`src/setup/`. Do not add arbitrary Bash or PowerShell setup hooks. Provider
+setup must use the explicit typed adapter boundary and must not evaluate
+downloaded installer scripts.
 
 ## Secrets and OpenCode
 
 Encrypted bundles belong at `secrets/atuin.env.age` and
-`secrets/opencode.env.age`; they are embedded explicitly into the release
-binary. Rust decrypts them in memory using the age library. Never commit
-plaintext environment files, age private keys, decrypted credential files, or
-real credentials.
+`secrets/opencode.env.age`; embed each bundle explicitly beside its owning
+module definition. Rust decrypts them in memory using the age library. Never
+commit plaintext environment files, age private keys, decrypted credential
+files, or real credentials.
 
 Secret tests must generate age identities and use synthetic values. OpenCode
 coverage must preserve optional all-or-none provider behavior, protected

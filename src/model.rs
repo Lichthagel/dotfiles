@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Platform {
     Linux,
@@ -15,57 +17,46 @@ pub enum PackageManager {
     Scoop,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum AssetId {
-    GitConfig,
-    Bashrc,
-    Zshrc,
-    PowerShellProfile,
-    MiseBash,
-    MiseZsh,
-    MisePowerShell,
-    BrewBash,
-    BrewZsh,
-    ScoopPowerShell,
-    AtuinBash,
-    AtuinZsh,
-    AtuinPowerShell,
-    OhMyPoshConfig,
-    OhMyPoshBash,
-    OhMyPoshZsh,
-    OhMyPoshPowerShell,
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct EmbeddedAsset {
+    pub name: &'static str,
+    pub bytes: &'static [u8],
 }
 
-impl AssetId {
-    pub const ALL: [Self; 17] = [
-        Self::GitConfig,
-        Self::Bashrc,
-        Self::Zshrc,
-        Self::PowerShellProfile,
-        Self::MiseBash,
-        Self::MiseZsh,
-        Self::MisePowerShell,
-        Self::BrewBash,
-        Self::BrewZsh,
-        Self::ScoopPowerShell,
-        Self::AtuinBash,
-        Self::AtuinZsh,
-        Self::AtuinPowerShell,
-        Self::OhMyPoshConfig,
-        Self::OhMyPoshBash,
-        Self::OhMyPoshZsh,
-        Self::OhMyPoshPowerShell,
-    ];
-
-    pub const fn all() -> &'static [Self] {
-        &Self::ALL
+impl EmbeddedAsset {
+    pub const fn new(name: &'static str, bytes: &'static [u8]) -> Self {
+        Self { name, bytes }
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum SecretBundle {
-    Atuin,
-    OpenCode,
+impl fmt::Debug for EmbeddedAsset {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("EmbeddedAsset")
+            .field("name", &self.name)
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct EmbeddedSecretBundle {
+    pub name: &'static str,
+    pub bytes: &'static [u8],
+}
+
+impl EmbeddedSecretBundle {
+    pub const fn new(name: &'static str, bytes: &'static [u8]) -> Self {
+        Self { name, bytes }
+    }
+}
+
+impl fmt::Debug for EmbeddedSecretBundle {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("EmbeddedSecretBundle")
+            .field("name", &self.name)
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

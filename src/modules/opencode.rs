@@ -1,18 +1,51 @@
+use super::{CROSS_PLATFORM, NO_REQUIREMENTS};
+use crate::error::{InstallError, Result};
+use crate::model::{EmbeddedSecretBundle, PackageManager, Platform, SetupKind};
+use crate::platform::PlatformOps;
+use crate::registry::{ModuleSpec, PackageSpec};
+use crate::secrets::{SecretMode, SecretValues};
+use crate::setup::http::MAX_THEME_FILE_BYTES;
+use crate::setup::jsonc::JsoncDocument;
+use crate::setup::{SetupContext, SetupProbeContext};
+use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-use serde_json::{Map, Value};
-
-use crate::error::{InstallError, Result};
-use crate::model::Platform;
-use crate::platform::PlatformOps;
-use crate::secrets::SecretValues;
 use zeroize::Zeroizing;
 
-use super::http::MAX_THEME_FILE_BYTES;
-use super::jsonc::JsoncDocument;
-use super::SetupContext;
+const OPENCODE_SECRET_BUNDLE: EmbeddedSecretBundle =
+    EmbeddedSecretBundle::new("OpenCode", include_bytes!("../../secrets/opencode.env.age"));
+
+const OPENCODE_PACKAGES: &[PackageSpec] = &[
+    PackageSpec {
+        logical: "opencode",
+        manager: PackageManager::Brew,
+        name: "anomalyco/tap/opencode",
+    },
+    PackageSpec {
+        logical: "opencode",
+        manager: PackageManager::Mise,
+        name: "github:anomalyco/opencode",
+    },
+    PackageSpec {
+        logical: "opencode",
+        manager: PackageManager::Scoop,
+        name: "opencode",
+    },
+];
+
+pub const SPEC: ModuleSpec = ModuleSpec {
+    id: "opencode",
+    description: "OpenCode AI coding agent",
+    platforms: CROSS_PLATFORM,
+    default_selected: false,
+    provides: None,
+    requires: NO_REQUIREMENTS,
+    packages: OPENCODE_PACKAGES,
+    mappings: &[],
+    setup: SetupKind::OpenCode,
+    secret_bundle: Some(OPENCODE_SECRET_BUNDLE),
+};
 
 pub const SUPERPOWERS_PLUGIN: &str = "superpowers@git+https://github.com/obra/superpowers.git";
 const REQUIRED_PROVIDER_SECRETS: [&str; 4] = [
@@ -36,6 +69,10 @@ pub struct ThemeFile {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ThemeTree {
     pub files: Vec<ThemeFile>,
+}
+
+pub fn secret_request(_probe: &SetupProbeContext<'_>) -> Result<Option<SecretMode>> {
+    Ok(Some(SecretMode::Optional))
 }
 
 pub fn configure_opencode(context: &SetupContext<'_>) -> Result<()> {
@@ -96,18 +133,18 @@ pub fn configure_opencode(context: &SetupContext<'_>) -> Result<()> {
 
     context
         .platform
-        .replace_file(&config_file, &fs::read(&staged_config)?)?;
+        .ensure_file(&config_file, &fs::read(&staged_config)?)?;
     for (filename, bytes) in staged_credentials {
         context
             .platform
-            .replace_private_file(&config_dir.join(filename), &bytes)?;
+            .ensure_private_file(&config_dir.join(filename), &bytes)?;
     }
     let themes_dir = config_dir.join("themes");
     fs::create_dir_all(&themes_dir)?;
     for (filename, bytes) in staged_themes {
         context
             .platform
-            .replace_file(&themes_dir.join(filename), &bytes)?;
+            .ensure_file(&themes_dir.join(filename), &bytes)?;
     }
     Ok(())
 }

@@ -1,9 +1,13 @@
 # Modules
 
-The installer supports the modules below, as defined in
-[`src/registry.rs`](../src/registry.rs). Default selections apply to the
-interactive checklist on supported platforms; explicit `--modules` selection
-installs only the requested modules.
+The installer supports the modules below. Each module's `SPEC`, embedded
+configuration/profile assets, and any module-specific setup live in
+[`src/modules/`](../src/modules/); the explicit catalog in
+[`src/registry.rs`](../src/registry.rs) remains authoritative. Atuin and
+OpenCode also embed their encrypted secret bundles beside their module
+specifications; the source bundles remain under `secrets/`.
+Default selections apply to the interactive checklist on supported platforms;
+explicit `--modules` selection installs only the requested modules.
 
 | Module | Platforms | Selected by default | Purpose |
 | --- | --- | --- | --- |
@@ -49,9 +53,12 @@ their border comments. Bash uses `# >>> dotfiles managed bash section >>>` and
 markers with `zsh` and `powershell` in place of `bash`. If a profile has no
 managed section, the installer appends one while preserving the existing
 contents; malformed or unmatched borders stop the update without changing the
-file. Existing targets are backed up before updates, and embedded configuration
-assets are installed as regular files. See the [README](../README.md) for
-package-manager priority and Atuin/OpenCode credential setup.
+file. Content-changing replacements are backed up; identical regular files are
+left untouched and do not create new backups. Module-local embedded assets are
+installed as regular files. Private credential files with matching content have
+their permissions checked and repaired in place if needed. See the
+[README](../README.md) for package-manager priority and Atuin/OpenCode credential
+setup.
 
 ## Applied Module State
 
@@ -97,4 +104,6 @@ are disabled, and requests/redirects are restricted to HTTP/HTTPS. Requests have
 a 10-second connection timeout, a 60-second total request timeout, and a maximum
 of 10 redirects. Theme-tree and individual theme responses are limited
 to 1 MiB each, including responses without a declared content length. Downloaded
-JSON is validated before managed outputs are replaced.
+JSON is validated before managed outputs are considered for replacement. Every
+setup rerun still fetches upstream themes, but converged config, credential, and
+theme files are not rewritten or backed up.

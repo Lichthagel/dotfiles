@@ -4,8 +4,8 @@ use std::fs;
 
 use dotfiles::error::InstallError;
 use dotfiles::model::Platform;
+use dotfiles::modules::opencode::{configure_opencode, SUPERPOWERS_PLUGIN};
 use dotfiles::setup::http::MAX_THEME_FILE_BYTES;
-use dotfiles::setup::opencode::{configure_opencode, SUPERPOWERS_PLUGIN};
 use support::opencode::{config_path_is_private, OpenCodeFixture};
 
 #[test]
@@ -15,10 +15,35 @@ fn opencode_is_idempotent_and_does_not_write_secret_values_to_config() {
         support::ScopedXdgConfigHome::new(fixture.config_dir().parent().expect("config home"));
     configure_opencode(&fixture.context()).unwrap();
     let first = fixture.read_config();
+    let paths = [
+        fixture.config_file(),
+        fixture.themes_dir().join("catppuccin-frappe.json"),
+        fixture.themes_dir().join("catppuccin-mocha.json"),
+        fixture.config_dir().join("openrouter-api-key"),
+        fixture.config_dir().join("azure-api-key"),
+        fixture.config_dir().join("azure-resource-name"),
+        fixture.config_dir().join("digitalocean-access-token"),
+    ];
+    let modified_before = paths
+        .iter()
+        .map(|path| fs::metadata(path).unwrap().modified().unwrap())
+        .collect::<Vec<_>>();
+    let backup_count = count_files(&fixture.ops.backup_root().unwrap());
     configure_opencode(&fixture.context()).unwrap();
     let second = fixture.read_config();
 
     assert_eq!(first, second);
+    assert_eq!(
+        paths
+            .iter()
+            .map(|path| fs::metadata(path).unwrap().modified().unwrap())
+            .collect::<Vec<_>>(),
+        modified_before
+    );
+    assert_eq!(
+        count_files(&fixture.ops.backup_root().unwrap()),
+        backup_count
+    );
     assert_eq!(fixture.plugin_count(SUPERPOWERS_PLUGIN), 1);
     assert_eq!(fixture.value_count_in_config("openrouter-test-secret"), 0);
     let config = fixture.read_config();
@@ -59,6 +84,57 @@ fn opencode_is_idempotent_and_does_not_write_secret_values_to_config() {
         serde_json::json!(["uvx", "duckduckgo-mcp-server"])
     );
     assert!(!fixture.read_config().get("theme").is_some());
+}
+
+fn count_files(root: &std::path::Path) -> usize {
+    let Ok(entries) = fs::read_dir(root) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|entry| {
+            if entry.path().is_dir() {
+                count_files(&entry.path())
+            } else {
+                1
+            }
+        })
+        .sum()
+}
+
+#[test]
+fn changed_theme_updates_only_its_managed_output() {
+    let fixture = OpenCodeFixture::with_jsonc_and_existing_plugin();
+    let _config_home =
+        support::ScopedXdgConfigHome::new(fixture.config_dir().parent().expect("config home"));
+    configure_opencode(&fixture.context()).unwrap();
+
+    let config_path = fixture.config_file();
+    let mocha_path = fixture.themes_dir().join("catppuccin-mocha.json");
+    let config_modified = fs::metadata(&config_path).unwrap().modified().unwrap();
+    let mocha_modified = fs::metadata(&mocha_path).unwrap().modified().unwrap();
+    let backups_before = count_files(&fixture.ops.backup_root().unwrap());
+    fixture
+        .http
+        .set_bytes("frappe", br#"{"name":"updated-frappe"}"#.to_vec());
+    configure_opencode(&fixture.context()).unwrap();
+
+    assert_eq!(
+        fs::read(fixture.themes_dir().join("catppuccin-frappe.json")).unwrap(),
+        br#"{"name":"updated-frappe"}"#
+    );
+    assert_eq!(
+        fs::metadata(&config_path).unwrap().modified().unwrap(),
+        config_modified
+    );
+    assert_eq!(
+        fs::metadata(&mocha_path).unwrap().modified().unwrap(),
+        mocha_modified
+    );
+    assert_eq!(
+        count_files(&fixture.ops.backup_root().unwrap()),
+        backups_before + 1
+    );
 }
 
 #[test]
@@ -104,6 +180,34 @@ fn credentials_are_written_protected_and_never_to_config() {
             "credential is not private: {name}"
         );
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn matching_credentials_with_unsafe_modes_are_secured_without_backup() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = OpenCodeFixture::with_jsonc_and_existing_plugin();
+    let _config_home =
+        support::ScopedXdgConfigHome::new(fixture.config_dir().parent().expect("config home"));
+    configure_opencode(&fixture.context()).unwrap();
+    let credential = fixture.config_dir().join("openrouter-api-key");
+    let modified = fs::metadata(&credential).unwrap().modified().unwrap();
+    let backups = count_files(&fixture.ops.backup_root().unwrap());
+    fs::set_permissions(&credential, fs::Permissions::from_mode(0o644)).unwrap();
+
+    configure_opencode(&fixture.context()).unwrap();
+
+    assert_eq!(fs::read(&credential).unwrap(), b"openrouter-test-secret");
+    assert_eq!(
+        fs::metadata(&credential).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert_eq!(
+        fs::metadata(&credential).unwrap().modified().unwrap(),
+        modified
+    );
+    assert_eq!(count_files(&fixture.ops.backup_root().unwrap()), backups);
 }
 
 #[test]

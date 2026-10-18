@@ -1,9 +1,8 @@
 mod support;
 
-use dotfiles::assets::asset_bytes;
 use dotfiles::mappings::{apply_mapping, backup_root, resolve_target};
 use dotfiles::model::{Platform, Target};
-use dotfiles::platform::{PlatformOps, SystemTimestamp};
+use dotfiles::platform::{FileChange, PlatformOps, SystemTimestamp};
 use dotfiles::registry::{self, MappingBehavior, MappingSpec};
 use std::fs;
 use std::sync::{Mutex, OnceLock};
@@ -25,21 +24,34 @@ fn existing_target_is_backed_up_and_embedded_asset_is_a_regular_file() {
 }
 
 #[test]
+fn identical_regular_file_is_unchanged_without_an_extra_backup() {
+    let fixture = MappingFixture::new();
+    fixture.write_target(".gitconfig", b"old");
+    let first = apply_mapping(&fixture.ops, git_mapping(), b"new", &SystemTimestamp).unwrap();
+    assert!(matches!(
+        first.change,
+        FileChange::Content { backup: Some(_) }
+    ));
+    let backup_count = count_files(&fixture.ops.context().backup_root);
+
+    let second = apply_mapping(&fixture.ops, git_mapping(), b"new", &SystemTimestamp).unwrap();
+    assert_eq!(second.change, FileChange::Unchanged);
+    assert_eq!(
+        count_files(&fixture.ops.context().backup_root),
+        backup_count
+    );
+    assert_eq!(fixture.read_target(".gitconfig"), b"new");
+}
+
+#[test]
 fn first_install_materializes_the_embedded_asset() {
     let fixture = MappingFixture::new();
     let mapping = git_mapping();
-    apply_mapping(
-        &fixture.ops,
-        mapping,
-        asset_bytes(mapping.asset),
-        &SystemTimestamp,
-    )
-    .unwrap();
+    let applied =
+        apply_mapping(&fixture.ops, mapping, mapping.asset.bytes, &SystemTimestamp).unwrap();
 
-    assert_eq!(
-        fixture.read_target(".gitconfig"),
-        asset_bytes(mapping.asset)
-    );
+    assert_eq!(applied.change, FileChange::Content { backup: None });
+    assert_eq!(fixture.read_target(".gitconfig"), mapping.asset.bytes);
     assert!(!fixture.target(".gitconfig").is_symlink());
 }
 
@@ -80,6 +92,27 @@ fn existing_symlink_is_backed_up_without_following_it() {
     assert_eq!(fixture.read_target(".gitconfig"), b"new");
     assert!(!target.is_symlink());
     assert_eq!(fixture.read_backup(".gitconfig"), b"linked");
+}
+
+#[cfg(unix)]
+#[test]
+fn matching_symlink_is_replaced_instead_of_reported_unchanged() {
+    use std::os::unix::fs::symlink;
+
+    let fixture = MappingFixture::new();
+    let source = fixture.temp.path().join("source");
+    fs::write(&source, b"same").unwrap();
+    let target = fixture.target(".gitconfig");
+    symlink(&source, &target).unwrap();
+
+    let result = apply_mapping(&fixture.ops, git_mapping(), b"same", &SystemTimestamp).unwrap();
+
+    assert!(matches!(
+        result.change,
+        FileChange::Content { backup: Some(_) }
+    ));
+    assert!(!target.is_symlink());
+    assert_eq!(fs::read(&target).unwrap(), b"same");
 }
 
 #[test]
@@ -170,6 +203,38 @@ fn private_file_replacement_sets_mode_0600() {
 
 #[cfg(unix)]
 #[test]
+fn private_file_permissions_are_repaired_without_rewriting_contents() {
+    use dotfiles::platform::unix::UnixPlatform;
+    use std::os::unix::fs::PermissionsExt;
+    use tempfile::tempdir;
+
+    let temp = tempdir().unwrap();
+    let home = temp.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let platform = UnixPlatform::new(dotfiles::platform::PathContext::new(
+        home.clone(),
+        None,
+        temp.path().join("state/backups"),
+    ));
+    let target = home.join("credential");
+    fs::write(&target, b"secret").unwrap();
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
+
+    let repaired = platform.ensure_private_file(&target, b"secret").unwrap();
+    assert_eq!(repaired.change, FileChange::Permissions);
+    assert_eq!(fs::read(&target).unwrap(), b"secret");
+    assert_eq!(
+        fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert_eq!(count_files(&temp.path().join("state/backups")), 0);
+
+    let unchanged = platform.ensure_private_file(&target, b"secret").unwrap();
+    assert_eq!(unchanged.change, FileChange::Unchanged);
+}
+
+#[cfg(unix)]
+#[test]
 fn private_file_backup_is_protected_before_replacement() {
     use dotfiles::platform::unix::UnixPlatform;
     use std::os::unix::fs::PermissionsExt;
@@ -216,7 +281,14 @@ fn private_file_replacement_grants_only_current_user_full_control() {
         temp.path().join("state"),
     ));
     let target = home.join("credential");
-    platform.replace_private_file(&target, b"secret").unwrap();
+    platform.ensure_private_file(&target, b"secret").unwrap();
+    assert_eq!(
+        platform
+            .ensure_private_file(&target, b"secret")
+            .unwrap()
+            .change,
+        FileChange::Unchanged
+    );
     let whoami = String::from_utf8(Command::new("whoami").output().unwrap().stdout).unwrap();
     let account = whoami.trim().rsplit('\\').next().unwrap();
     let acl =
@@ -338,14 +410,9 @@ fn shell_profile_mappings_preserve_unmanaged_content_and_update_only_the_managed
         let user_content = b"# user configuration without a final newline";
         fs::write(&target, user_content).unwrap();
 
-        apply_mapping(
-            &fixture.ops,
-            mapping,
-            asset_bytes(mapping.asset),
-            &SystemTimestamp,
-        )
-        .unwrap();
+        apply_mapping(&fixture.ops, mapping, mapping.asset.bytes, &SystemTimestamp).unwrap();
         let first_install = fs::read(&target).unwrap();
+        let first_backup_count = count_files(&fixture.ops.context().backup_root);
         assert!(first_install.starts_with(user_content));
         assert!(first_install
             .windows(start.len())
@@ -354,13 +421,13 @@ fn shell_profile_mappings_preserve_unmanaged_content_and_update_only_the_managed
             .windows(end.len())
             .any(|window| window == end.as_bytes()));
 
-        apply_mapping(
-            &fixture.ops,
-            mapping,
-            asset_bytes(mapping.asset),
-            &SystemTimestamp,
-        )
-        .unwrap();
+        let unchanged =
+            apply_mapping(&fixture.ops, mapping, mapping.asset.bytes, &SystemTimestamp).unwrap();
+        assert_eq!(unchanged.change, FileChange::Unchanged);
+        assert_eq!(
+            count_files(&fixture.ops.context().backup_root),
+            first_backup_count
+        );
         assert_eq!(fs::read(&target).unwrap(), first_install);
 
         let prefix = b"# before managed block\n";
@@ -373,15 +440,9 @@ fn shell_profile_mappings_preserve_unmanaged_content_and_update_only_the_managed
         existing.extend_from_slice(suffix);
         fs::write(&target, existing).unwrap();
 
-        apply_mapping(
-            &fixture.ops,
-            mapping,
-            asset_bytes(mapping.asset),
-            &SystemTimestamp,
-        )
-        .unwrap();
+        apply_mapping(&fixture.ops, mapping, mapping.asset.bytes, &SystemTimestamp).unwrap();
         let mut expected = prefix.to_vec();
-        expected.extend_from_slice(asset_bytes(mapping.asset));
+        expected.extend_from_slice(mapping.asset.bytes);
         expected.extend_from_slice(suffix);
         assert_eq!(fs::read(&target).unwrap(), expected);
     }
@@ -395,18 +456,29 @@ fn malformed_shell_managed_section_is_not_replaced() {
     let original = b"user content\n# >>> dotfiles managed zsh section >>>\nunfinished\n";
     fs::write(&target, original).unwrap();
 
-    let error = apply_mapping(
-        &fixture.ops,
-        mapping,
-        asset_bytes(mapping.asset),
-        &SystemTimestamp,
-    )
-    .unwrap_err();
+    let error =
+        apply_mapping(&fixture.ops, mapping, mapping.asset.bytes, &SystemTimestamp).unwrap_err();
 
     assert!(error
         .to_string()
         .contains("invalid managed-section boundary"));
     assert_eq!(fs::read(target).unwrap(), original);
+}
+
+fn count_files(root: &std::path::Path) -> usize {
+    let Ok(entries) = fs::read_dir(root) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|entry| {
+            if entry.path().is_dir() {
+                count_files(&entry.path())
+            } else {
+                1
+            }
+        })
+        .sum()
 }
 
 fn shell_mapping(module_id: &str, platform: Platform) -> &'static MappingSpec {

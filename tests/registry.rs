@@ -1,4 +1,4 @@
-use dotfiles::model::{AssetId, PackageManager, Platform, SecretBundle, SetupKind, Target};
+use dotfiles::model::{PackageManager, Platform, SetupKind, Target};
 use dotfiles::registry::{self, MappingBehavior};
 
 #[test]
@@ -36,12 +36,18 @@ fn provider_and_secret_contracts_match_existing_modules() {
         Some(PackageManager::Mise)
     );
     assert_eq!(
-        registry::find_module("atuin").unwrap().secret_bundle,
-        Some(SecretBundle::Atuin)
+        registry::find_module("atuin")
+            .unwrap()
+            .secret_bundle
+            .map(|bundle| bundle.name),
+        Some("Atuin")
     );
     assert_eq!(
-        registry::find_module("opencode").unwrap().secret_bundle,
-        Some(SecretBundle::OpenCode)
+        registry::find_module("opencode")
+            .unwrap()
+            .secret_bundle
+            .map(|bundle| bundle.name),
+        Some("OpenCode")
     );
     assert_eq!(
         registry::find_module("atuin").unwrap().setup,
@@ -178,13 +184,13 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
     let git = registry::find_module("git").unwrap();
     assert!(git.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Linux
-            && mapping.asset == AssetId::GitConfig
+            && mapping.asset.name == "git/gitconfig"
             && mapping.target == Target::Home(".gitconfig")
             && mapping.requires.is_empty()
     }));
     assert!(git.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Windows
-            && mapping.asset == AssetId::GitConfig
+            && mapping.asset.name == "git/gitconfig"
             && mapping.target == Target::Home(".gitconfig")
             && mapping.requires.is_empty()
     }));
@@ -192,7 +198,7 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
     let bash = registry::find_module("bash").unwrap();
     assert!(bash.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Linux
-            && mapping.asset == AssetId::Bashrc
+            && mapping.asset.name == "bash/bashrc"
             && mapping.target == Target::Home(".bashrc")
             && mapping.behavior
                 == MappingBehavior::ManagedSection {
@@ -204,7 +210,7 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
     let zsh = registry::find_module("zsh").unwrap();
     assert!(zsh.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Linux
-            && mapping.asset == AssetId::Zshrc
+            && mapping.asset.name == "zsh/zshrc"
             && mapping.target == Target::Home(".zshrc")
             && mapping.behavior
                 == MappingBehavior::ManagedSection {
@@ -216,7 +222,7 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
     let powershell = registry::find_module("powershell").unwrap();
     assert!(powershell.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Windows
-            && mapping.asset == AssetId::PowerShellProfile
+            && mapping.asset.name == "powershell/profile.ps1"
             && mapping.target == Target::ProfileFile
             && mapping.behavior
                 == MappingBehavior::ManagedSection {
@@ -228,19 +234,19 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
     let mise = registry::find_module("mise").unwrap();
     assert!(mise.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Linux
-            && mapping.asset == AssetId::MiseBash
+            && mapping.asset.name == "mise/bash/10-mise.bash"
             && mapping.target == Target::Home(".config/bashrc.d/10-mise.bash")
             && mapping.requires == ["bash"]
     }));
     assert!(mise.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Linux
-            && mapping.asset == AssetId::MiseZsh
+            && mapping.asset.name == "mise/zsh/10-mise.zsh"
             && mapping.target == Target::Home(".config/zshrc.d/10-mise.zsh")
             && mapping.requires == ["zsh"]
     }));
     assert!(mise.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Windows
-            && mapping.asset == AssetId::MisePowerShell
+            && mapping.asset.name == "mise/powershell/10-mise.ps1"
             && mapping.target == Target::ProfileSibling("Profile.d/10-mise.ps1")
             && mapping.requires == ["powershell"]
     }));
@@ -248,20 +254,20 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
     let brew = registry::find_module("brew").unwrap();
     assert!(brew.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Linux
-            && mapping.asset == AssetId::BrewBash
+            && mapping.asset.name == "brew/bash/05-brew.bash"
             && mapping.target == Target::Home(".config/bashrc.d/05-brew.bash")
             && mapping.requires == ["bash"]
     }));
     assert!(brew.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Linux
-            && mapping.asset == AssetId::BrewZsh
+            && mapping.asset.name == "brew/zsh/05-brew.zsh"
             && mapping.target == Target::Home(".config/zshrc.d/05-brew.zsh")
             && mapping.requires == ["zsh"]
     }));
     let scoop = registry::find_module("scoop").unwrap();
     assert!(scoop.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Windows
-            && mapping.asset == AssetId::ScoopPowerShell
+            && mapping.asset.name == "scoop/powershell/05-scoop.ps1"
             && mapping.target == Target::ProfileSibling("Profile.d/05-scoop.ps1")
             && mapping.requires == ["powershell"]
     }));
@@ -269,19 +275,19 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
     let atuin = registry::find_module("atuin").unwrap();
     assert!(atuin.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Linux
-            && mapping.asset == AssetId::AtuinBash
+            && mapping.asset.name == "atuin/bash/50-atuin.bash"
             && mapping.target == Target::Home(".config/bashrc.d/50-atuin.bash")
             && mapping.requires == ["bash"]
     }));
     assert!(atuin.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Linux
-            && mapping.asset == AssetId::AtuinZsh
+            && mapping.asset.name == "atuin/zsh/50-atuin.zsh"
             && mapping.target == Target::Home(".config/zshrc.d/50-atuin.zsh")
             && mapping.requires == ["zsh"]
     }));
     assert!(atuin.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Windows
-            && mapping.asset == AssetId::AtuinPowerShell
+            && mapping.asset.name == "atuin/powershell/50-atuin.ps1"
             && mapping.target == Target::ProfileSibling("Profile.d/50-atuin.ps1")
             && mapping.requires == ["powershell"]
     }));
@@ -289,31 +295,31 @@ fn mappings_use_typed_embedded_assets_and_require_shell_modules() {
     let oh_my_posh = registry::find_module("oh-my-posh").unwrap();
     assert!(oh_my_posh.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Linux
-            && mapping.asset == AssetId::OhMyPoshConfig
+            && mapping.asset.name == "oh-my-posh/oh-my-posh.config.json"
             && mapping.target == Target::Home(".config/oh-my-posh/config.json")
             && mapping.requires.is_empty()
     }));
     assert!(oh_my_posh.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Linux
-            && mapping.asset == AssetId::OhMyPoshBash
+            && mapping.asset.name == "oh-my-posh/bash/10-oh-my-posh.bash"
             && mapping.target == Target::Home(".config/bashrc.d/10-oh-my-posh.bash")
             && mapping.requires == ["bash"]
     }));
     assert!(oh_my_posh.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Linux
-            && mapping.asset == AssetId::OhMyPoshZsh
+            && mapping.asset.name == "oh-my-posh/zsh/10-oh-my-posh.zsh"
             && mapping.target == Target::Home(".config/zshrc.d/10-oh-my-posh.zsh")
             && mapping.requires == ["zsh"]
     }));
     assert!(oh_my_posh.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Windows
-            && mapping.asset == AssetId::OhMyPoshConfig
+            && mapping.asset.name == "oh-my-posh/oh-my-posh.config.json"
             && mapping.target == Target::ProfileSibling("oh-my-posh.config.json")
             && mapping.requires.is_empty()
     }));
     assert!(oh_my_posh.mappings.iter().any(|mapping| {
         mapping.platform == Platform::Windows
-            && mapping.asset == AssetId::OhMyPoshPowerShell
+            && mapping.asset.name == "oh-my-posh/powershell/10-oh-my-posh.ps1"
             && mapping.target == Target::ProfileSibling("Profile.d/10-oh-my-posh.ps1")
             && mapping.requires == ["powershell"]
     }));

@@ -6,10 +6,9 @@ use std::str::FromStr;
 use age::x25519;
 use zeroize::Zeroizing;
 
-use crate::assets::encrypted_bundle_bytes;
 use crate::cli::TerminalIo;
 use crate::error::{InstallError, Result};
-use crate::model::SecretBundle;
+use crate::model::EmbeddedSecretBundle;
 use crate::platform;
 
 #[derive(Clone)]
@@ -205,7 +204,7 @@ pub fn resolve_identity(
 }
 
 pub fn decrypt_bundle(
-    bundle: SecretBundle,
+    bundle: EmbeddedSecretBundle,
     ciphertext: &[u8],
     source: &IdentitySource,
     mode: SecretMode,
@@ -214,22 +213,16 @@ pub fn decrypt_bundle(
 }
 
 pub fn decrypt_embedded(
-    bundle: SecretBundle,
+    bundle: EmbeddedSecretBundle,
     mode: SecretMode,
     prompt: Option<&mut dyn IdentityPrompt>,
 ) -> Result<Option<SecretScope>> {
     let source = IdentitySource::from_environment()?;
-    decrypt_bundle_with_prompt(
-        bundle,
-        encrypted_bundle_bytes(bundle),
-        &source,
-        mode,
-        prompt,
-    )
+    decrypt_bundle_with_prompt(bundle, bundle.bytes, &source, mode, prompt)
 }
 
 pub fn decrypt_bundle_with_prompt(
-    bundle: SecretBundle,
+    bundle: EmbeddedSecretBundle,
     ciphertext: &[u8],
     source: &IdentitySource,
     mode: SecretMode,
@@ -327,8 +320,8 @@ fn parse_identities(contents: &str) -> Result<Vec<x25519::Identity>> {
     Ok(identities)
 }
 
-fn decryption_error(bundle: SecretBundle, error: impl fmt::Display) -> InstallError {
-    InstallError::secret(format!("unable to decrypt {bundle:?} bundle: {error}"))
+fn decryption_error(bundle: EmbeddedSecretBundle, error: impl fmt::Display) -> InstallError {
+    InstallError::secret(format!("unable to decrypt {} bundle: {error}", bundle.name))
 }
 
 pub struct SecretValues {

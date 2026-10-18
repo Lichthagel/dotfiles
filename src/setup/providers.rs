@@ -1,108 +1,31 @@
+pub use crate::modules::brew::install_homebrew;
+pub use crate::modules::scoop::install_scoop;
+
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::error::{InstallError, Result};
-use crate::model::{PackageManager, Platform};
+use crate::model::PackageManager;
 use crate::packages::{ManagerAdapter, PackageManagerAdapter};
-use crate::platform::current_scoop_root;
 
 use super::SetupContext;
 
-const HOMEBREW_REPOSITORY: &str = "https://github.com/Homebrew/brew";
-const SCOOP_REPOSITORY: &str = "https://github.com/ScoopInstaller/Scoop";
-
-pub fn install_homebrew(context: &SetupContext<'_>) -> Result<()> {
-    if context.platform.platform() != Platform::Linux {
-        return Err(InstallError::Setup(
-            "Homebrew provider is supported only on Linux".into(),
-        ));
-    }
-    if context.runner.available("brew") {
-        return Ok(());
-    }
-    ensure_git(context)?;
-
-    let prefix = env::var_os("DOTFILES_HOMEBREW_PREFIX")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/home/linuxbrew/.linuxbrew"));
-    clone_repository(context, "Homebrew", HOMEBREW_REPOSITORY, &prefix)?;
-    create_directory("Homebrew", &prefix.join("bin"))?;
-    create_directory("Homebrew", &prefix.join("sbin"))?;
-    let brew = prefix.join("bin").join("brew");
-    if !brew.is_file() {
-        return Err(InstallError::Setup(format!(
-            "Homebrew bootstrap did not produce brew: {}",
-            brew.display()
-        )));
-    }
-    prepend_path("Homebrew", &[prefix.join("bin"), prefix.join("sbin")])?;
-    verify_manager(context, "Homebrew", "brew", &["--version".into()])?;
-    Ok(())
-}
-
-pub fn install_scoop(context: &SetupContext<'_>) -> Result<()> {
-    if context.platform.platform() != Platform::Windows {
-        return Err(InstallError::Setup(
-            "Scoop provider is supported only on Windows".into(),
-        ));
-    }
-    if context.runner.available("scoop") {
-        return Ok(());
-    }
-    ensure_git(context)?;
-
-    let home = context
-        .platform
-        .home_dir()
-        .map_err(|error| provider_error("Scoop", "resolve home directory", error))?;
-    let root = current_scoop_root(&home);
-    let current = root.join("apps").join("scoop").join("current");
-    clone_repository(context, "Scoop", SCOOP_REPOSITORY, &current)?;
-    for directory in [
-        root.join("shims"),
-        root.join("apps"),
-        root.join("buckets"),
-        root.join("cache"),
-        root.join("persist"),
-    ] {
-        create_directory("Scoop", &directory)?;
-    }
-    let scoop_script = current.join("bin").join("scoop.ps1");
-    if !scoop_script.is_file() {
-        return Err(InstallError::Setup(format!(
-            "Scoop bootstrap did not produce scoop.ps1: {}",
-            scoop_script.display()
-        )));
-    }
-    prepend_path("Scoop", &[root.join("shims")])?;
-    if !context.runner.available("pwsh") {
-        return Err(InstallError::Setup(
-            "Scoop bootstrap requires pwsh to run scoop.ps1".into(),
-        ));
-    }
-    verify_manager(
-        context,
-        "Scoop",
-        "pwsh",
-        &[
-            "-NoProfile".into(),
-            "-File".into(),
-            scoop_script.to_string_lossy().into_owned(),
-            "--version".into(),
-        ],
-    )?;
-    Ok(())
-}
-
-fn clone_repository(
+pub(crate) fn clone_repository(
     context: &SetupContext<'_>,
     provider: &str,
     repository: &str,
     destination: &Path,
+    expected_entrypoint: &Path,
 ) -> Result<()> {
     if destination.exists() {
-        return Ok(());
+        if expected_entrypoint.is_file() {
+            return Ok(());
+        }
+        return Err(InstallError::Setup(format!(
+            "{provider} installation exists but is missing its expected entry point: {}",
+            expected_entrypoint.display()
+        )));
     }
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent)
@@ -124,10 +47,16 @@ fn clone_repository(
             "{provider} git clone failed for {repository}"
         )));
     }
+    if !expected_entrypoint.is_file() {
+        return Err(InstallError::Setup(format!(
+            "{provider} bootstrap did not produce its expected entry point: {}",
+            expected_entrypoint.display()
+        )));
+    }
     Ok(())
 }
 
-fn ensure_git(context: &SetupContext<'_>) -> Result<()> {
+pub(crate) fn ensure_git(context: &SetupContext<'_>) -> Result<()> {
     if context.runner.available("git") {
         return Ok(());
     }
@@ -164,22 +93,47 @@ fn ensure_git(context: &SetupContext<'_>) -> Result<()> {
     Ok(())
 }
 
-fn create_directory(provider: &str, path: &Path) -> Result<()> {
+pub(crate) fn create_directory(provider: &str, path: &Path) -> Result<()> {
     fs::create_dir_all(path).map_err(|error| provider_error(provider, "create directory", error))
 }
 
-fn prepend_path(provider: &str, entries: &[PathBuf]) -> Result<()> {
-    let mut paths = entries.to_vec();
-    if let Some(existing) = env::var_os("PATH") {
-        paths.extend(env::split_paths(&existing));
+pub(crate) fn prepend_path(provider: &str, entries: &[PathBuf]) -> Result<bool> {
+    let existing = env::var_os("PATH")
+        .map(|value| env::split_paths(&value).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let mut prefix: Vec<PathBuf> = Vec::new();
+    for candidate in entries {
+        if !existing
+            .iter()
+            .chain(prefix.iter())
+            .any(|current| same_path(current, candidate))
+        {
+            prefix.push(candidate.clone());
+        }
     }
+    if prefix.is_empty() {
+        return Ok(false);
+    }
+    prefix.extend(existing);
     let path =
-        env::join_paths(paths).map_err(|error| provider_error(provider, "update PATH", error))?;
+        env::join_paths(prefix).map_err(|error| provider_error(provider, "update PATH", error))?;
     env::set_var("PATH", path);
-    Ok(())
+    Ok(true)
 }
 
-fn verify_manager(
+#[cfg(windows)]
+fn same_path(left: &Path, right: &Path) -> bool {
+    left.as_os_str()
+        .to_string_lossy()
+        .eq_ignore_ascii_case(&right.as_os_str().to_string_lossy())
+}
+
+#[cfg(not(windows))]
+fn same_path(left: &Path, right: &Path) -> bool {
+    left == right
+}
+
+pub(crate) fn verify_manager(
     context: &SetupContext<'_>,
     provider: &str,
     program: &str,
@@ -202,6 +156,10 @@ fn verify_manager(
     Ok(())
 }
 
-fn provider_error(provider: &str, operation: &str, error: impl std::fmt::Display) -> InstallError {
+pub(crate) fn provider_error(
+    provider: &str,
+    operation: &str,
+    error: impl std::fmt::Display,
+) -> InstallError {
     InstallError::Setup(format!("{provider} {operation} failed: {error}"))
 }

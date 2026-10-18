@@ -161,8 +161,19 @@ plugin is managed from `superpowers@git+https://github.com/obra/superpowers.git`
 
 ## Adding Modules
 
-Add a typed module entry to `src/registry.rs`, add its static configuration
-files under `modules/<name>/`, and reference those files explicitly from
-`src/assets.rs`. Setup behavior belongs in a Rust handler under `src/setup/`;
-do not add arbitrary shell or PowerShell setup hooks. Keep platform-specific
-mappings typed and declare shell/profile requirements in the registry.
+Create `src/modules/<name>.rs` with a public typed `SPEC` and keep that
+module's package and mapping declarations there. Put custom module behavior in
+the same file; reuse shared operations from `src/setup/`, `src/mappings.rs`,
+and `src/platform/`. Declare the module in `src/modules/mod.rs` and add its
+`SPEC` explicitly to `src/registry.rs`, which remains the authoritative catalog.
+Add static configuration under `modules/<name>/` and embed each file explicitly
+beside its mapping in `src/modules/<name>.rs`. If the module uses an encrypted
+secret bundle, embed its `secrets/*.env.age` file beside the module definition as
+well. Update `docs/modules.md` and add focused tests. Do not add arbitrary shell
+or PowerShell setup hooks.
+
+Repeated application converges: identical regular files are not rewritten or
+backed up, and private files have their permissions checked and repaired when
+needed. Content-changing replacements retain the existing staged-write and
+backup behavior. OpenCode still fetches and validates upstream themes on each
+setup run.

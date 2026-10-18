@@ -3,10 +3,9 @@ use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use crate::assets::asset_bytes;
 use crate::error::{InstallError, Result};
 use crate::model::{Platform, Target};
-use crate::platform::{BackupRecord, PlatformOps, TimestampProvider};
+use crate::platform::{FileApplyResult, PlatformOps, TimestampProvider};
 use crate::registry::{MappingBehavior, MappingSpec, ModuleSpec};
 
 pub fn resolve_target(ops: &dyn PlatformOps, target: Target) -> Result<PathBuf> {
@@ -22,7 +21,7 @@ pub fn apply_mapping(
     mapping: &MappingSpec,
     bytes: &[u8],
     timestamp: &dyn TimestampProvider,
-) -> Result<BackupRecord> {
+) -> Result<FileApplyResult> {
     if ops.platform() != mapping.platform {
         return Err(InstallError::Mapping(format!(
             "mapping targets {:?}, but the active platform is {:?}",
@@ -32,16 +31,16 @@ pub fn apply_mapping(
     }
     if bytes.is_empty() {
         return Err(InstallError::Asset(format!(
-            "embedded asset {:?} is empty",
-            mapping.asset
+            "embedded asset {} is empty",
+            mapping.asset.name
         )));
     }
     let target = resolve_target(ops, mapping.target)?;
     match mapping.behavior {
-        MappingBehavior::Replace => ops.replace_file_with_timestamp(&target, bytes, timestamp),
+        MappingBehavior::Replace => ops.ensure_file_with_timestamp(&target, bytes, timestamp),
         MappingBehavior::ManagedSection { start, end } => {
             let merged = merge_managed_section(&target, bytes, start, end)?;
-            ops.replace_file_with_timestamp(&target, &merged, timestamp)
+            ops.ensure_file_with_timestamp(&target, &merged, timestamp)
         }
     }
 }
@@ -143,8 +142,8 @@ pub fn apply_embedded_mapping(
     ops: &dyn PlatformOps,
     mapping: &MappingSpec,
     timestamp: &dyn TimestampProvider,
-) -> Result<BackupRecord> {
-    apply_mapping(ops, mapping, asset_bytes(mapping.asset), timestamp)
+) -> Result<FileApplyResult> {
+    apply_mapping(ops, mapping, mapping.asset.bytes, timestamp)
 }
 
 pub fn apply_module_mappings(
@@ -152,7 +151,7 @@ pub fn apply_module_mappings(
     module: &ModuleSpec,
     available_modules: &[String],
     timestamp: &dyn TimestampProvider,
-) -> Result<Vec<BackupRecord>> {
+) -> Result<Vec<FileApplyResult>> {
     let mut backups = Vec::new();
     for mapping in module.mappings {
         if !mapping_supported(ops, mapping)

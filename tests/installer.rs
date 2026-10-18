@@ -54,6 +54,22 @@ static TEST_CONSUMER: ModuleSpec = ModuleSpec {
 };
 static TEST_MODULES: &[ModuleSpec] = &[TEST_PROVIDER, TEST_CONSUMER];
 
+fn count_files(root: &std::path::Path) -> usize {
+    let Ok(entries) = fs::read_dir(root) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|entry| {
+            if entry.path().is_dir() {
+                count_files(&entry.path())
+            } else {
+                1
+            }
+        })
+        .sum()
+}
+
 fn environment_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
@@ -107,6 +123,67 @@ fn git_installs_before_mapping() {
         fs::read(fixture.target(".gitconfig")).unwrap(),
         include_bytes!("../modules/git/gitconfig")
     );
+}
+
+#[test]
+fn converged_rerun_does_not_reinstall_or_rewrite_module_outputs() {
+    let runner = FakeRunner::available(["git", "apt", "dpkg-query", "run0", "apt-get"]);
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    let request = InstallRequest::explicit(["git", "bash", "mise"], true, Platform::Linux);
+    install(request.clone(), test_context(&mut fixture, &runner)).unwrap();
+
+    let outputs = [
+        fixture.target(".gitconfig"),
+        fixture.target(".bashrc"),
+        fixture.target(".config/bashrc.d/10-mise.bash"),
+    ];
+    let bytes = outputs
+        .iter()
+        .map(|path| fs::read(path).unwrap())
+        .collect::<Vec<_>>();
+    let modified = outputs
+        .iter()
+        .map(|path| fs::metadata(path).unwrap().modified().unwrap())
+        .collect::<Vec<_>>();
+    let state_path = fixture.ops.state_path().unwrap();
+    let state_bytes = fs::read(&state_path).unwrap();
+    let state_modified = fs::metadata(&state_path).unwrap().modified().unwrap();
+    let backup_root = fixture.ops.backup_root().unwrap();
+    let backup_count = count_files(&backup_root);
+    let installed_packages = runner.package_log();
+    assert!(installed_packages.contains(&"git".into()));
+    assert!(installed_packages.contains(&"mise".into()));
+
+    runner.mark_installed("apt", "git");
+    runner.mark_installed("apt", "mise");
+    install(request, test_context(&mut fixture, &runner)).unwrap();
+
+    assert_eq!(runner.package_log(), installed_packages);
+    assert_eq!(
+        outputs
+            .iter()
+            .map(|path| fs::read(path).unwrap())
+            .collect::<Vec<_>>(),
+        bytes
+    );
+    assert_eq!(
+        outputs
+            .iter()
+            .map(|path| fs::metadata(path).unwrap().modified().unwrap())
+            .collect::<Vec<_>>(),
+        modified
+    );
+    assert_eq!(fs::read(&state_path).unwrap(), state_bytes);
+    assert_eq!(
+        fs::metadata(&state_path).unwrap().modified().unwrap(),
+        state_modified
+    );
+    assert_eq!(count_files(&backup_root), backup_count);
+    assert!(fixture
+        .terminal
+        .lines()
+        .iter()
+        .any(|line| line.starts_with("unchanged:")));
 }
 
 #[test]
@@ -608,10 +685,8 @@ fn logged_in_atuin_skips_required_secret_decryption() {
         runner.add_available(program);
     }
     let mut fixture = InstallFixture::new(Platform::Linux);
-    let result = install(
-        InstallRequest::explicit(["atuin"], true, Platform::Linux),
-        test_context(&mut fixture, &runner),
-    );
+    let request = InstallRequest::explicit(["atuin"], true, Platform::Linux);
+    let result = install(request.clone(), test_context(&mut fixture, &runner));
 
     match old_identity {
         Some(value) => std::env::set_var("AGE_IDENTITY", value),
@@ -622,6 +697,29 @@ fn logged_in_atuin_skips_required_secret_decryption() {
         None => std::env::remove_var("AGE_IDENTITIES"),
     }
     result.unwrap();
+    runner.mark_installed("apt", "atuin");
+    install(request, test_context(&mut fixture, &runner)).unwrap();
+    assert_eq!(fixture.terminal.secret_reads(), 0);
+    assert!(runner
+        .calls()
+        .iter()
+        .all(|call| call.args.first().map(String::as_str) != Some("login")));
+}
+
+#[test]
+fn atuin_status_failure_stops_before_mapping_or_state_recording() {
+    let runner = FakeRunner::available(["atuin", "apt", "dpkg-query", "run0", "apt-get"])
+        .failing_program("atuin");
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    let result = install(
+        InstallRequest::explicit(["atuin"], true, Platform::Linux),
+        test_context(&mut fixture, &runner),
+    );
+
+    assert!(result.is_err());
+    assert!(!fixture.ops.state_path().unwrap().exists());
+    assert!(!fixture.target(".config/bashrc.d/50-atuin.bash").exists());
+    assert_eq!(fixture.terminal.secret_reads(), 0);
 }
 
 #[test]

@@ -11,6 +11,8 @@ use support::opencode::{config_path_is_private, OpenCodeFixture};
 #[test]
 fn opencode_is_idempotent_and_does_not_write_secret_values_to_config() {
     let fixture = OpenCodeFixture::with_jsonc_and_existing_plugin();
+    let _config_home =
+        support::ScopedXdgConfigHome::new(fixture.config_dir().parent().expect("config home"));
     configure_opencode(&fixture.context()).unwrap();
     let first = fixture.read_config();
     configure_opencode(&fixture.context()).unwrap();
@@ -62,6 +64,8 @@ fn opencode_is_idempotent_and_does_not_write_secret_values_to_config() {
 #[test]
 fn themes_are_flattened_and_unrelated_themes_are_preserved() {
     let fixture = OpenCodeFixture::with_jsonc_and_existing_plugin();
+    let _config_home =
+        support::ScopedXdgConfigHome::new(fixture.config_dir().parent().expect("config home"));
     configure_opencode(&fixture.context()).unwrap();
 
     assert_eq!(
@@ -83,6 +87,8 @@ fn themes_are_flattened_and_unrelated_themes_are_preserved() {
 #[test]
 fn credentials_are_written_protected_and_never_to_config() {
     let fixture = OpenCodeFixture::with_jsonc_and_existing_plugin();
+    let _config_home =
+        support::ScopedXdgConfigHome::new(fixture.config_dir().parent().expect("config home"));
     configure_opencode(&fixture.context()).unwrap();
 
     for (name, value) in [
@@ -104,6 +110,8 @@ fn credentials_are_written_protected_and_never_to_config() {
 fn explicit_platform_fixtures_use_platform_config_filenames() {
     for platform in [Platform::Linux, Platform::Windows] {
         let fixture = OpenCodeFixture::for_platform(platform);
+        let _config_home =
+            support::ScopedXdgConfigHome::new(fixture.config_dir().parent().expect("config home"));
         configure_opencode(&fixture.context()).unwrap();
         let expected = if platform == Platform::Windows {
             "opencode.jsonc"
@@ -126,6 +134,8 @@ fn explicit_platform_fixtures_use_platform_config_filenames() {
 #[test]
 fn windows_fixture_inspects_current_user_dacl() {
     let fixture = OpenCodeFixture::for_platform_with_secrets(Platform::Windows);
+    let _config_home =
+        support::ScopedXdgConfigHome::new(fixture.config_dir().parent().expect("config home"));
     configure_opencode(&fixture.context()).unwrap();
     for name in [
         "openrouter-api-key",
@@ -140,6 +150,8 @@ fn windows_fixture_inspects_current_user_dacl() {
 #[test]
 fn no_provider_secrets_leave_existing_provider_configuration_unchanged() {
     let fixture = OpenCodeFixture::with_no_secrets();
+    let _config_home =
+        support::ScopedXdgConfigHome::new(fixture.config_dir().parent().expect("config home"));
     let before = fs::read(fixture.config_file()).unwrap();
     configure_opencode(&fixture.context()).unwrap();
     let config = fixture.read_config();
@@ -158,6 +170,8 @@ fn no_provider_secrets_leave_existing_provider_configuration_unchanged() {
 #[test]
 fn partial_provider_secrets_fail_before_any_output_changes() {
     let fixture = OpenCodeFixture::with_partial_secrets();
+    let _config_home =
+        support::ScopedXdgConfigHome::new(fixture.config_dir().parent().expect("config home"));
     let before = fixture.snapshot_managed_outputs();
     let error = configure_opencode(&fixture.context()).unwrap_err();
     assert!(matches!(error, InstallError::Secret(_)));
@@ -168,6 +182,8 @@ fn partial_provider_secrets_fail_before_any_output_changes() {
 #[test]
 fn malformed_theme_does_not_replace_config_credentials_or_themes() {
     let fixture = OpenCodeFixture::with_malformed_theme_client();
+    let _config_home =
+        support::ScopedXdgConfigHome::new(fixture.config_dir().parent().expect("config home"));
     let before = fixture.snapshot_managed_outputs();
     assert!(configure_opencode(&fixture.context()).is_err());
     assert_eq!(fixture.snapshot_managed_outputs(), before);
@@ -176,6 +192,8 @@ fn malformed_theme_does_not_replace_config_credentials_or_themes() {
 #[test]
 fn failed_theme_download_does_not_replace_config_credentials_or_themes() {
     let fixture = OpenCodeFixture::with_failing_theme_client();
+    let _config_home =
+        support::ScopedXdgConfigHome::new(fixture.config_dir().parent().expect("config home"));
     let before = fixture.snapshot_managed_outputs();
     assert!(configure_opencode(&fixture.context()).is_err());
     assert_eq!(fixture.snapshot_managed_outputs(), before);
@@ -185,12 +203,22 @@ fn failed_theme_download_does_not_replace_config_credentials_or_themes() {
 fn theme_count_and_file_size_limits_fail_before_replacement() {
     let count_fixture = OpenCodeFixture::with_http(support::opencode::FakeHttp::too_many_themes());
     let count_before = count_fixture.snapshot_managed_outputs();
-    assert!(configure_opencode(&count_fixture.context()).is_err());
+    {
+        let _config_home = support::ScopedXdgConfigHome::new(
+            count_fixture.config_dir().parent().expect("config home"),
+        );
+        assert!(configure_opencode(&count_fixture.context()).is_err());
+    }
     assert_eq!(count_fixture.snapshot_managed_outputs(), count_before);
 
     let size_fixture = OpenCodeFixture::with_http(support::opencode::FakeHttp::oversized_theme());
     let size_before = size_fixture.snapshot_managed_outputs();
-    assert!(configure_opencode(&size_fixture.context()).is_err());
+    {
+        let _config_home = support::ScopedXdgConfigHome::new(
+            size_fixture.config_dir().parent().expect("config home"),
+        );
+        assert!(configure_opencode(&size_fixture.context()).is_err());
+    }
     assert_eq!(size_fixture.snapshot_managed_outputs(), size_before);
     assert!(MAX_THEME_FILE_BYTES > 0);
 }

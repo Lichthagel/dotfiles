@@ -377,6 +377,7 @@ fn optional_opencode_secrets_leave_provider_configuration_unchanged() {
     let _lock = environment_lock();
     let runner = FakeRunner::available(["brew"]);
     let mut fixture = InstallFixture::new(Platform::Linux);
+    let _config_home = support::ScopedXdgConfigHome::new(fixture.target(".config"));
     let previous_identity = std::env::var_os("AGE_IDENTITIES");
     std::env::set_var(
         "AGE_IDENTITIES",

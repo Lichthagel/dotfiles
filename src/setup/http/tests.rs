@@ -30,6 +30,8 @@ fn serve_with_body_delay(
                     Err(error) => panic!("accept fixture connection: {error}"),
                 }
             };
+            // Windows may carry the listener's nonblocking mode to accepted sockets.
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();

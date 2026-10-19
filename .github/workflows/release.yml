@@ -1,4 +1,4 @@
-name: Publish latest binaries to Cloudflare R2
+name: Publish latest dotfiles artifacts to Cloudflare R2
 
 on:
   push:
@@ -113,19 +113,27 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publish latest binaries to R2
+    name: Publish latest dotfiles artifacts to R2
     needs: build
     runs-on: ubuntu-latest
     environment:
       name: production
     steps:
+      - name: Check out bootstrap scripts
+        uses: actions/checkout@v7
+
       - name: Retrieve build artifacts
         uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
 
-      - name: Upload latest binaries and checksums to R2
+      - name: Include bootstrap scripts
+        run: |
+          mkdir -p dist/bootstrap
+          cp bootstrap/install.sh bootstrap/install.ps1 dist/bootstrap/
+
+      - name: Upload latest binaries, checksums, and bootstraps to R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}

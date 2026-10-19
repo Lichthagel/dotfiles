@@ -43,9 +43,9 @@ permissions and release compilation.
 GitHub Actions runs the Rust tests and Clippy on native Linux and Windows
 runners, exercises both ephemeral bootstraps, and builds binaries for
 `x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`. On each push to
-`main`, the publish workflow overwrites the latest binaries and checksums under
-the R2 `dotfiles/` prefix. The publish job targets the GitHub Actions
-`production` environment. Configure `CLOUDFLARE_ACCOUNT_ID`,
+`main`, the publish workflow overwrites the latest binaries, checksums, and
+bootstrap scripts under the R2 `dotfiles/` prefix. The publish job targets the
+GitHub Actions `production` environment. Configure `CLOUDFLARE_ACCOUNT_ID`,
 `CLOUDFLARE_R2_ACCESS_KEY_ID`, `CLOUDFLARE_R2_SECRET_ACCESS_KEY`, and
 `CLOUDFLARE_R2_BUCKET` as environment secrets to enable uploads; environment
 protection rules can gate deployments. No GitHub Release is created.

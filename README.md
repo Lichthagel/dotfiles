@@ -11,17 +11,19 @@ Cloudflare R2, verify its SHA-256 checksum, run it from a temporary directory,
 and remove it when setup finishes. The binary is not installed persistently:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Lichthagel/dotfiles/main/bootstrap/install.sh | sh
+curl -fsSL https://r2.licht.moe/dotfiles/bootstrap/install.sh | sh
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/Lichthagel/dotfiles/main/bootstrap/install.ps1 | iex
+irm https://r2.licht.moe/dotfiles/bootstrap/install.ps1 | iex
 ```
 
 The bootstraps support Linux `x86_64` and Windows `x86_64`. Every push to
-`main` validates and builds both binaries, then replaces the files under the
-R2 `dotfiles/` prefix at `https://r2.licht.moe/dotfiles/`. There are no
-versioned downloads; the bootstrap always installs the current build. Set
+`main` validates and builds both binaries, then replaces the binaries,
+checksums, and bootstrap scripts under the R2 `dotfiles/` prefix at
+`https://r2.licht.moe/dotfiles/`. The bootstraps are published at
+`/bootstrap/install.sh` and `/bootstrap/install.ps1`. There are no versioned
+downloads; the bootstrap always installs the current build. Set
 `DOTFILES_BASE_URL` to test another download endpoint. The Windows bootstrap
 passes the current PowerShell `$PROFILE` through `DOTFILES_PROFILE` so profile
 mappings work when the binary is run outside PowerShell. Direct binary runs
@@ -87,9 +89,9 @@ pwsh -NoProfile -File .\tests\bootstrap.ps1
 ```
 
 GitHub Actions builds binaries for `x86_64-unknown-linux-gnu` and
-`x86_64-pc-windows-msvc`, publishes matching `.sha256` files to Cloudflare R2,
-and runs the native test suites. The publish job uses the `production`
-Actions environment; configure `CLOUDFLARE_ACCOUNT_ID`,
+`x86_64-pc-windows-msvc`, publishes matching `.sha256` files and the bootstrap
+scripts to Cloudflare R2 and runs the native test suites. The publish job uses
+the `production` Actions environment; configure `CLOUDFLARE_ACCOUNT_ID`,
 `CLOUDFLARE_R2_ACCESS_KEY_ID`, `CLOUDFLARE_R2_SECRET_ACCESS_KEY`, and
 `CLOUDFLARE_R2_BUCKET` as environment secrets for uploads. Environment
 protection rules can gate deployments.

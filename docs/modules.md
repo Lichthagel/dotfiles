@@ -49,7 +49,15 @@ The ID groups sources into one installation requirement and labels package
 selection and diagnostics; it does not determine the executable name. For
 example, Git declares ID `git`, command `Some("git")`, and a Winget source named
 `Git.Git`. Package IDs shared across modules are planned once, with their sources
-combined.
+combined. The installer builds one package checklist for all selected modules
+before installing any packages or applying module configuration. Left/Right
+chooses a manager and Space skips a package. Returning with `b` or cancelling
+does not apply any modules; `--yes` accepts the whole plan without a checklist.
+After confirmation, installation phases are calculated from module and mapping
+requirements plus the chosen packages' provider dependencies. Unchosen sources
+and skipped packages do not add provider dependencies, and an already available
+manager needs no provider phase. Shared package IDs are installed only once,
+before the first module that needs them.
 
 Package installation is skipped when the explicitly declared command is already
 in `PATH`. This check happens before package-manager queries and provider
@@ -58,10 +66,15 @@ If the command is absent, or `command` is `None`, package-manager records are
 still checked to avoid reinstalling an existing package. Source availability and
 manager priority remain platform-specific. Skipping a package does not skip the
 module's setup, configuration mappings, or applied-state update. Already
-available managers are offered regardless of provider module selection. If no
-declared manager is available, select a provider module to install one (for
-example, `brew` for Homebrew); otherwise installation stops with the provider
-IDs to select. `--yes` does not bypass this requirement.
+available managers are offered regardless of provider module selection. Managers
+that will be installed by explicitly selected provider modules are also offered
+in the same checklist, without querying them before they exist. Choosing such
+a manager orders its provider before dependent modules; installed-package
+records are checked once that manager becomes available. A provider cannot use
+its own unavailable manager to install its prerequisites. If no declared manager
+is available or supplied by a selected module, select a provider module to
+install one (for example, `brew` for Homebrew); otherwise installation stops with
+the provider IDs to select. `--yes` does not bypass this requirement.
 
 Shell integration requires the corresponding shell module to be selected in
 this run or recorded as previously applied: `bash` or `zsh` on Linux, and

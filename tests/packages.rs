@@ -151,6 +151,69 @@ fn available_provider_managers_are_candidates_without_module_selection() {
 }
 
 #[test]
+fn selected_providers_offer_future_managers_without_querying_them() {
+    let provider = ModuleSpec {
+        id: "future-mise",
+        provides: Some(PackageManager::Mise),
+        packages: &[],
+        ..*module("git")
+    };
+    let runner = FakeRunner::available(["apt"]);
+    let plan =
+        build_package_plan(&runner, Platform::Linux, &[module("git"), &provider], true).unwrap();
+
+    assert_eq!(plan.actions()[0].manager, PackageManager::Apt);
+    assert_eq!(
+        plan.alternatives["git"]
+            .iter()
+            .map(|candidate| candidate.manager)
+            .collect::<Vec<_>>(),
+        [PackageManager::Apt, PackageManager::Mise]
+    );
+    assert!(runner.calls().iter().all(|call| call.program != "mise"));
+}
+
+#[test]
+fn future_managers_can_be_the_only_package_source() {
+    let provider = ModuleSpec {
+        id: "future-mise",
+        provides: Some(PackageManager::Mise),
+        packages: &[],
+        ..*module("git")
+    };
+    let runner = FakeRunner::available(std::iter::empty::<&str>());
+    let plan =
+        build_package_plan(&runner, Platform::Linux, &[module("git"), &provider], true).unwrap();
+    assert_eq!(plan.actions()[0].manager, PackageManager::Mise);
+    assert!(runner.calls().is_empty());
+}
+
+#[test]
+fn unavailable_providers_cannot_install_their_own_packages() {
+    let provider = ModuleSpec {
+        provides: Some(PackageManager::Mise),
+        ..*module("git")
+    };
+    let runner = FakeRunner::available(std::iter::empty::<&str>());
+    assert!(build_package_plan(&runner, Platform::Linux, &[&provider], true).is_err());
+}
+
+#[test]
+fn installed_packages_are_skipped_even_when_future_managers_are_offered() {
+    let provider = ModuleSpec {
+        id: "future-mise",
+        provides: Some(PackageManager::Mise),
+        packages: &[],
+        ..*module("git")
+    };
+    let runner = FakeRunner::available_and_installed(["apt"], [("apt", "git")]);
+    let plan =
+        build_package_plan(&runner, Platform::Linux, &[module("git"), &provider], true).unwrap();
+    assert!(plan.actions().is_empty());
+    assert!(runner.calls().iter().all(|call| call.program != "mise"));
+}
+
+#[test]
 fn linux_falls_back_to_sudo_when_run0_is_unavailable() {
     let runner = FakeRunner::available(["apt", "sudo"]);
     install_package(

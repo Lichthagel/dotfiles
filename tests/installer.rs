@@ -10,6 +10,7 @@ use dotfiles::engine::{
 use dotfiles::engine::{ordered_phases, resolve_modules_from_registry};
 use dotfiles::error::Result;
 use dotfiles::model::{PackageManager, Platform};
+use dotfiles::packages::{build_package_plan, build_package_plan_with_providers};
 use dotfiles::platform::PlatformOps;
 use dotfiles::registry::{MappingSpec, ModuleSpec, Package, PackageSource};
 use dotfiles::run;
@@ -107,6 +108,46 @@ fn environment_lock() -> std::sync::MutexGuard<'static, ()> {
     LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
 }
 
+struct SelectionTerminal {
+    keys: std::collections::VecDeque<TerminalKey>,
+    lines: Vec<String>,
+}
+
+impl SelectionTerminal {
+    fn new(keys: impl IntoIterator<Item = TerminalKey>) -> Self {
+        Self {
+            keys: keys.into_iter().collect(),
+            lines: Vec::new(),
+        }
+    }
+}
+
+impl TerminalIo for SelectionTerminal {
+    fn is_interactive(&self) -> bool {
+        true
+    }
+
+    fn read_key(&mut self) -> Result<TerminalKey> {
+        assert!(!self
+            .lines
+            .iter()
+            .any(|line| line.starts_with("completed module:")));
+        Ok(self
+            .keys
+            .pop_front()
+            .expect("package selection must only happen once"))
+    }
+
+    fn clear(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn write_line(&mut self, line: &str) -> Result<()> {
+        self.lines.push(line.to_owned());
+        Ok(())
+    }
+}
+
 struct BackTerminal;
 
 impl TerminalIo for BackTerminal {
@@ -184,7 +225,7 @@ fn existing_commands_allow_dotfiles_without_a_package_manager() {
 }
 
 #[test]
-fn existing_commands_do_not_resolve_package_manager_providers() {
+fn existing_commands_do_not_require_package_manager_providers() {
     let runner = FakeRunner::available(["consumer"]);
     let resolved = resolve_modules_from_registry(
         &["test-mise-consumer".into()],
@@ -197,11 +238,14 @@ fn existing_commands_do_not_resolve_package_manager_providers() {
         resolved.iter().map(|module| module.id).collect::<Vec<_>>(),
         ["test-mise-consumer"]
     );
+    let plan = build_package_plan(&runner, Platform::Linux, &resolved, true).unwrap();
+    assert!(plan.actions().is_empty());
+    assert!(runner.calls().is_empty());
 }
 
 #[test]
-fn package_ids_are_not_used_as_commands_during_provider_resolution() {
-    let runner = FakeRunner::available(["consumer-package"]);
+fn package_ids_are_not_used_as_commands_during_planning() {
+    let runner = FakeRunner::available(["consumer-package", "apt"]);
     let resolved = resolve_modules_from_registry(
         &["test-mise-provider".into(), "test-mise-consumer".into()],
         Platform::Linux,
@@ -213,6 +257,11 @@ fn package_ids_are_not_used_as_commands_during_provider_resolution() {
         resolved.iter().map(|module| module.id).collect::<Vec<_>>(),
         ["test-mise-provider", "test-mise-consumer"]
     );
+    let plan = build_package_plan(&runner, Platform::Linux, &resolved, true).unwrap();
+    assert!(plan
+        .actions()
+        .iter()
+        .any(|action| action.package_id == "consumer-package"));
 }
 
 #[test]
@@ -231,7 +280,7 @@ fn packages_without_commands_still_use_explicitly_selected_providers() {
             ..TEST_CONSUMER
         },
     ];
-    let runner = FakeRunner::available(["consumer-package", "consumer"]);
+    let runner = FakeRunner::available(["consumer-package", "consumer", "apt"]);
     let resolved = resolve_modules_from_registry(
         &["test-mise-provider".into(), "test-mise-consumer".into()],
         Platform::Linux,
@@ -243,15 +292,20 @@ fn packages_without_commands_still_use_explicitly_selected_providers() {
         resolved.iter().map(|module| module.id).collect::<Vec<_>>(),
         ["test-mise-provider", "test-mise-consumer"]
     );
+    let plan = build_package_plan(&runner, Platform::Linux, &resolved, true).unwrap();
+    assert!(plan
+        .actions()
+        .iter()
+        .any(|action| action.package_id == "consumer-package"));
 }
 
 #[test]
 fn missing_managers_require_explicit_provider_selection() {
     let runner = FakeRunner::available(std::iter::empty::<&str>());
-    let error = resolve_modules_from_registry(
-        &["test-mise-consumer".into()],
-        Platform::Linux,
-        &runner,
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    let error = install_with_registry(
+        InstallRequest::explicit(["test-mise-consumer"], true, Platform::Linux),
+        test_context(&mut fixture, &runner),
         TEST_MODULES,
     )
     .unwrap_err();
@@ -512,6 +566,227 @@ fn intentionally_skipped_packages_do_not_prevent_recording_applied_dotfiles() {
 }
 
 #[test]
+fn all_packages_are_selected_once_before_installation() {
+    let runner = FakeRunner::apt_without_mise_then_mise_after_install();
+    let fixture = InstallFixture::new(Platform::Linux);
+    let mut terminal = SelectionTerminal::new([TerminalKey::Enter]);
+    install(
+        InstallRequest::explicit(["git", "mise"], false, Platform::Linux),
+        InstallContext {
+            platform: &fixture.ops,
+            runner: &runner,
+            http: &fixture.http,
+            terminal: &mut terminal,
+            timestamp: &fixture.timestamp,
+        },
+    )
+    .unwrap();
+
+    assert!(terminal.keys.is_empty());
+    assert!(terminal
+        .lines
+        .iter()
+        .any(|line| line.contains("git -> apt")));
+    assert!(terminal
+        .lines
+        .iter()
+        .any(|line| line.contains("mise -> apt")));
+    // An unchosen mise source must not force its provider ahead of Git.
+    assert_eq!(runner.package_log(), ["git", "mise"]);
+}
+
+#[test]
+fn choosing_a_future_manager_adds_a_provider_phase_after_selection() {
+    let runner = FakeRunner::apt_without_mise_then_mise_after_install().refresh_adds("mise");
+    let fixture = InstallFixture::new(Platform::Linux);
+    let mut terminal = SelectionTerminal::new([TerminalKey::Right, TerminalKey::Enter]);
+    install(
+        InstallRequest::explicit(["git", "mise"], false, Platform::Linux),
+        InstallContext {
+            platform: &fixture.ops,
+            runner: &runner,
+            http: &fixture.http,
+            terminal: &mut terminal,
+            timestamp: &fixture.timestamp,
+        },
+    )
+    .unwrap();
+
+    assert!(terminal
+        .lines
+        .iter()
+        .any(|line| line.contains("git -> mise")));
+    assert_eq!(runner.package_log(), ["mise"]);
+    let calls = runner.calls();
+    let provider = calls
+        .iter()
+        .position(|call| call.args == ["apt-get", "install", "-y", "mise"])
+        .unwrap();
+    let consumer = calls
+        .iter()
+        .position(|call| call.program == "mise" && call.args == ["use", "--global", "git"])
+        .unwrap();
+    assert!(provider < consumer);
+    let completed = terminal
+        .lines
+        .iter()
+        .filter(|line| line.starts_with("completed module:"))
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        completed,
+        ["completed module: mise", "completed module: git"]
+    );
+}
+
+#[test]
+fn cancelling_package_selection_leaves_earlier_modules_untouched() {
+    let runner = FakeRunner::apt_without_mise_then_mise_after_install();
+    let fixture = InstallFixture::new(Platform::Linux);
+    let mut terminal = SelectionTerminal::new([TerminalKey::Escape]);
+    let error = install(
+        InstallRequest::explicit(["bash", "git"], false, Platform::Linux),
+        InstallContext {
+            platform: &fixture.ops,
+            runner: &runner,
+            http: &fixture.http,
+            terminal: &mut terminal,
+            timestamp: &fixture.timestamp,
+        },
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, dotfiles::error::InstallError::Cancelled));
+    assert!(runner.package_log().is_empty());
+    assert!(!fixture.target(".bashrc").exists());
+    assert!(!fixture.ops.state_path().unwrap().exists());
+}
+
+#[test]
+fn shared_packages_are_installed_once_across_module_phases() {
+    let runner = FakeRunner::apt_without_mise_then_mise_after_install();
+    let modules = [
+        ModuleSpec {
+            id: "first",
+            ..TEST_PROVIDER
+        },
+        ModuleSpec {
+            id: "second",
+            ..TEST_PROVIDER
+        },
+    ];
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    install_with_registry(
+        InstallRequest::explicit(["first", "second"], true, Platform::Linux),
+        test_context(&mut fixture, &runner),
+        &modules,
+    )
+    .unwrap();
+
+    assert_eq!(runner.package_log(), ["mise"]);
+    assert_eq!(runner.refresh_count(), 1);
+    let state = ModuleState::load(&fixture.ops.state_path().unwrap()).unwrap();
+    assert!(state.contains("first"));
+    assert!(state.contains("second"));
+}
+
+#[test]
+fn only_selected_packages_and_managers_contribute_provider_dependencies() {
+    let modules = [
+        ModuleSpec {
+            requires: &["test-mise-consumer"],
+            ..TEST_PROVIDER
+        },
+        ModuleSpec {
+            packages: &[Package {
+                id: "consumer-package",
+                command: Some("consumer"),
+                sources: &[
+                    PackageSource {
+                        manager: PackageManager::Apt,
+                        name: "consumer",
+                    },
+                    PackageSource {
+                        manager: PackageManager::Mise,
+                        name: "consumer",
+                    },
+                ],
+            }],
+            ..TEST_CONSUMER
+        },
+    ];
+    let runner = FakeRunner::apt_without_mise_then_mise_after_install();
+    let resolved = resolve_modules_from_registry(
+        &["test-mise-provider".into(), "test-mise-consumer".into()],
+        Platform::Linux,
+        &runner,
+        &modules,
+    )
+    .unwrap();
+    let mut plan =
+        build_package_plan_with_providers(&runner, Platform::Linux, &resolved, &modules, true)
+            .unwrap();
+    assert!(ordered_phases(&resolved, &plan, Platform::Linux, &runner).is_ok());
+    plan.actions_mut()[0].manager = PackageManager::Mise;
+    assert!(ordered_phases(&resolved, &plan, Platform::Linux, &runner)
+        .unwrap_err()
+        .to_string()
+        .contains("cycle"));
+
+    let fixture = InstallFixture::new(Platform::Linux);
+    let mut terminal = SelectionTerminal::new([TerminalKey::Right, TerminalKey::Enter]);
+    let error = install_with_registry(
+        InstallRequest::explicit(
+            ["test-mise-provider", "test-mise-consumer"],
+            false,
+            Platform::Linux,
+        ),
+        InstallContext {
+            platform: &fixture.ops,
+            runner: &runner,
+            http: &fixture.http,
+            terminal: &mut terminal,
+            timestamp: &fixture.timestamp,
+        },
+        &modules,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("cycle"));
+    assert!(runner.package_log().is_empty());
+    assert!(!fixture.ops.state_path().unwrap().exists());
+
+    plan.actions_mut()[0].selected = false;
+    assert!(ordered_phases(&resolved, &plan, Platform::Linux, &runner).is_ok());
+}
+
+#[test]
+fn already_available_managers_do_not_create_provider_cycles() {
+    let modules = [
+        ModuleSpec {
+            requires: &["test-mise-consumer"],
+            ..TEST_PROVIDER
+        },
+        TEST_CONSUMER,
+    ];
+    let runner = FakeRunner::available(["mise"]);
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    install_with_registry(
+        InstallRequest::explicit(
+            ["test-mise-provider", "test-mise-consumer"],
+            true,
+            Platform::Linux,
+        ),
+        test_context(&mut fixture, &runner),
+        &modules,
+    )
+    .unwrap();
+    assert!(runner
+        .calls()
+        .iter()
+        .any(|call| call.args == ["use", "--global", "consumer"]));
+}
+
+#[test]
 fn provider_phase_precedes_dependent_package_phase() {
     let runner = FakeRunner::apt_without_mise_then_mise_after_install();
     let mut fixture = InstallFixture::new(Platform::Linux);
@@ -692,6 +967,46 @@ fn refresh_makes_provider_available_to_dependent_phase() {
 }
 
 #[test]
+fn deferred_manager_records_are_checked_without_another_selection() {
+    let runner = FakeRunner::apt_without_mise_then_mise_after_install().refresh_adds("mise");
+    runner.mark_installed("mise", "consumer");
+    let fixture = InstallFixture::new(Platform::Linux);
+    let mut terminal = SelectionTerminal::new([TerminalKey::Enter]);
+    install_with_registry(
+        InstallRequest::explicit(
+            ["test-mise-consumer", "test-mise-provider"],
+            false,
+            Platform::Linux,
+        ),
+        InstallContext {
+            platform: &fixture.ops,
+            runner: &runner,
+            http: &fixture.http,
+            terminal: &mut terminal,
+            timestamp: &fixture.timestamp,
+        },
+        TEST_MODULES,
+    )
+    .unwrap();
+
+    assert_eq!(runner.package_log(), ["mise"]);
+    assert_eq!(runner.refresh_count(), 1);
+    let calls = runner.calls();
+    let provider = calls
+        .iter()
+        .position(|call| call.args == ["apt-get", "install", "-y", "mise"])
+        .unwrap();
+    let query = calls
+        .iter()
+        .position(|call| call.program == "mise" && call.args == ["list"])
+        .unwrap();
+    assert!(provider < query);
+    assert!(!calls
+        .iter()
+        .any(|call| call.args == ["use", "--global", "consumer"]));
+}
+
+#[test]
 fn refresh_failure_identifies_the_current_package_and_module() {
     let runner = FakeRunner::apt_without_mise_then_mise_after_install().failing_refresh();
     let mut fixture = InstallFixture::new(Platform::Linux);
@@ -723,7 +1038,8 @@ fn shell_prerequisites_are_not_implicitly_resolved_but_order_explicit_modules() 
         &runner,
     )
     .unwrap();
-    let phases = ordered_phases(&resolved).unwrap();
+    let plan = build_package_plan(&runner, Platform::Linux, &resolved, true).unwrap();
+    let phases = ordered_phases(&resolved, &plan, Platform::Linux, &runner).unwrap();
     let ids: Vec<_> = phases.iter().map(|phase| phase[0].id).collect();
     assert_eq!(ids, ["bash", "oh-my-posh"]);
 }
@@ -849,7 +1165,7 @@ fn package_selector_back_returns_to_module_selection_before_side_effects() {
     let runner = FakeRunner::available(["apt", "dpkg-query", "run0", "apt-get"]);
     let fixture = InstallFixture::new(Platform::Linux);
     let mut terminal = BackTerminal;
-    let request = InstallRequest::interactive(["git"], false, Platform::Linux);
+    let request = InstallRequest::interactive(["bash", "git"], false, Platform::Linux);
     let outcome = install(
         request,
         InstallContext {
@@ -864,6 +1180,8 @@ fn package_selector_back_returns_to_module_selection_before_side_effects() {
     assert_eq!(outcome, InstallOutcome::BackToModuleSelection);
     assert!(runner.package_log().is_empty());
     assert!(!fixture.target(".gitconfig").exists());
+    assert!(!fixture.target(".bashrc").exists());
+    assert!(!fixture.ops.state_path().unwrap().exists());
 }
 
 #[test]

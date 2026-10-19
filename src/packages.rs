@@ -636,6 +636,22 @@ pub fn build_package_plan(
     runner: &dyn CommandRunner,
     platform: Platform,
     modules: &[&ModuleSpec],
+    noninteractive: bool,
+) -> Result<PackagePlan> {
+    build_package_plan_with_providers(
+        runner,
+        platform,
+        modules,
+        crate::registry::modules(),
+        noninteractive,
+    )
+}
+
+pub fn build_package_plan_with_providers(
+    runner: &dyn CommandRunner,
+    platform: Platform,
+    modules: &[&ModuleSpec],
+    provider_catalog: &[ModuleSpec],
     _noninteractive: bool,
 ) -> Result<PackagePlan> {
     let mut packages_by_id = BTreeMap::<&str, Vec<(&str, &Package)>>::new();
@@ -663,41 +679,74 @@ pub fn build_package_plan(
         }) {
             continue;
         }
-        let available = packages
+        let mut candidates = Vec::new();
+        for source in packages
             .iter()
             .flat_map(|(_, package)| package.sources)
             .filter(|source| source.manager.is_supported_on(platform))
-            .filter(|source| PackageManagerAdapter::new(platform, source.manager).available(runner))
-            .map(|source| PackageCandidate {
+        {
+            let available = PackageManagerAdapter::new(platform, source.manager).available(runner);
+            let provided = modules.iter().any(|module| {
+                module.supports(platform)
+                    && module.provides == Some(source.manager)
+                    && packages.iter().all(|(owner, _)| *owner != module.id)
+            });
+            let candidate = PackageCandidate {
                 manager: source.manager,
                 package_name: source.name.to_owned(),
-            })
-            .collect::<Vec<_>>();
-        if available.is_empty() {
+            };
+            if (available || provided) && !candidates.contains(&candidate) {
+                candidates.push(candidate);
+            }
+        }
+        if candidates.is_empty() {
             let supported = PackageManager::priority(platform)
                 .iter()
                 .map(|manager| manager.label())
                 .collect::<Vec<_>>()
                 .join(", ");
+            let providers = provider_catalog
+                .iter()
+                .filter(|module| {
+                    module.supports(platform)
+                        && module.provides.is_some_and(|manager| {
+                            packages.iter().any(|(_, package)| {
+                                package
+                                    .sources
+                                    .iter()
+                                    .any(|source| source.manager == manager)
+                            })
+                        })
+                })
+                .map(|module| module.id)
+                .collect::<Vec<_>>();
+            let provider_hint = if providers.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "; explicitly select one of its provider modules ({}) in the module checklist or with --modules",
+                    providers.join(", ")
+                )
+            };
             return Err(InstallError::Package(format!(
-                "no supported package manager is available for {package_id}; supported managers: {supported}"
+                "no supported package manager is available for {package_id}; supported managers: {supported}{provider_hint}"
             )));
         }
-        let installed = available.iter().try_fold(false, |installed, candidate| {
-            if installed {
-                return Ok(true);
+        let installed = candidates.iter().try_fold(false, |installed, candidate| {
+            let adapter = PackageManagerAdapter::new(platform, candidate.manager);
+            if installed || !adapter.available(runner) {
+                return Ok(installed);
             }
-            PackageManagerAdapter::new(platform, candidate.manager)
-                .installed(runner, &candidate.package_name)
+            adapter.installed(runner, &candidate.package_name)
         })?;
-        alternatives.insert(package_id.to_owned(), available.clone());
+        alternatives.insert(package_id.to_owned(), candidates.clone());
         if installed {
             continue;
         }
         let selected = PackageManager::priority(platform)
             .iter()
             .find_map(|manager| {
-                available
+                candidates
                     .iter()
                     .find(|candidate| candidate.manager == *manager)
             })

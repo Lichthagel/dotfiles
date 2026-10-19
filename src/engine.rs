@@ -3,7 +3,8 @@ use crate::error::{InstallError, Result};
 use crate::mappings::apply_module_mappings;
 use crate::model::Platform;
 use crate::packages::{
-    build_package_plan, install_package, CommandRunner, ManagerAdapter, PackageManagerAdapter,
+    build_package_plan_with_providers, install_package, CommandRunner, ManagerAdapter,
+    PackageManagerAdapter, PackagePlan,
 };
 use crate::platform::{FileChange, PlatformOps, TimestampProvider};
 use crate::registry::{self, ModuleSpec};
@@ -31,9 +32,8 @@ enum VisitState {
     Visited,
 }
 
-struct Resolver<'a, 'r> {
+struct Resolver<'a> {
     platform: Platform,
-    runner: &'r dyn CommandRunner,
     modules: &'a [ModuleSpec],
     selected: BTreeSet<String>,
     states: BTreeMap<String, VisitState>,
@@ -41,16 +41,10 @@ struct Resolver<'a, 'r> {
     ordered: Vec<&'a ModuleSpec>,
 }
 
-impl<'a, 'r> Resolver<'a, 'r> {
-    fn new(
-        platform: Platform,
-        runner: &'r dyn CommandRunner,
-        modules: &'a [ModuleSpec],
-        selected: &[String],
-    ) -> Self {
+impl<'a> Resolver<'a> {
+    fn new(platform: Platform, modules: &'a [ModuleSpec], selected: &[String]) -> Self {
         Self {
             platform,
-            runner,
             modules,
             selected: selected.iter().cloned().collect(),
             states: BTreeMap::new(),
@@ -108,53 +102,6 @@ impl<'a, 'r> Resolver<'a, 'r> {
             self.resolve(dependency)?;
         }
 
-        for package in module.packages {
-            if package
-                .command
-                .is_some_and(|command| self.runner.available(command))
-            {
-                continue;
-            }
-            let sources = package
-                .sources
-                .iter()
-                .filter(|source| source.manager.is_supported_on(self.platform));
-            if sources.clone().any(|source| {
-                PackageManagerAdapter::new(self.platform, source.manager).available(self.runner)
-            }) {
-                continue;
-            }
-            let providers = sources
-                .filter_map(|source| {
-                    self.modules
-                        .iter()
-                        .find(|candidate| {
-                            candidate.provides == Some(source.manager)
-                                && candidate.supports(self.platform)
-                        })
-                        .map(|provider| (source.manager, provider))
-                })
-                .collect::<Vec<_>>();
-            if let Some((_, provider)) = providers
-                .iter()
-                .find(|(_, provider)| self.selected.iter().any(|selected| selected == provider.id))
-            {
-                self.resolve(provider.id)?;
-            } else if !providers.is_empty() {
-                let mut provider_ids = Vec::new();
-                for (_, provider) in &providers {
-                    if !provider_ids.contains(&provider.id) {
-                        provider_ids.push(provider.id);
-                    }
-                }
-                return Err(InstallError::Usage(format!(
-                    "module {} needs a package manager provided by this installer; explicitly select one of its provider modules ({}) in the module checklist or with --modules",
-                    module.id,
-                    provider_ids.join(", ")
-                )));
-            }
-        }
-
         self.stack.pop();
         self.states.insert(id.to_owned(), VisitState::Visited);
         self.ordered.push(module);
@@ -173,18 +120,23 @@ pub fn resolve_modules(
 pub fn resolve_modules_from_registry<'a>(
     selected: &[String],
     platform: Platform,
-    runner: &dyn CommandRunner,
+    _runner: &dyn CommandRunner,
     modules: &'a [ModuleSpec],
 ) -> Result<Vec<&'a ModuleSpec>> {
     crate::cli::validate_modules_against(selected, platform, modules)?;
-    let mut resolver = Resolver::new(platform, runner, modules, selected);
+    let mut resolver = Resolver::new(platform, modules, selected);
     for id in selected {
         resolver.resolve(id)?;
     }
     Ok(resolver.ordered)
 }
 
-pub fn ordered_phases<'a>(modules: &[&'a ModuleSpec]) -> Result<Vec<Vec<&'a ModuleSpec>>> {
+pub fn ordered_phases<'a>(
+    modules: &[&'a ModuleSpec],
+    package_plan: &PackagePlan,
+    platform: Platform,
+    runner: &dyn CommandRunner,
+) -> Result<Vec<Vec<&'a ModuleSpec>>> {
     let by_id = modules
         .iter()
         .map(|module| (module.id, *module))
@@ -203,15 +155,23 @@ pub fn ordered_phases<'a>(modules: &[&'a ModuleSpec]) -> Result<Vec<Vec<&'a Modu
                 module
                     .mappings
                     .iter()
+                    .filter(|mapping| mapping.platform == platform)
                     .flat_map(|mapping| mapping.requires.iter().copied()),
             );
-            let mut provider_dependencies = module
-                .packages
+            let mut provider_dependencies = package_plan
+                .actions()
                 .iter()
-                .flat_map(|package| package.sources)
-                .filter_map(|source| {
+                .filter(|action| {
+                    action.selected
+                        && module
+                            .packages
+                            .iter()
+                            .any(|package| package.id == action.package_id)
+                        && !PackageManagerAdapter::new(platform, action.manager).available(runner)
+                })
+                .filter_map(|action| {
                     by_id.values().find(|candidate| {
-                        candidate.provides == Some(source.manager) && candidate.id != module.id
+                        candidate.provides == Some(action.manager) && candidate.id != module.id
                     })
                 });
             let dependencies_ready = dependencies
@@ -262,8 +222,29 @@ pub fn install_with_registry(
 
     let resolved =
         resolve_modules_from_registry(&request.modules, request.platform, context.runner, modules)?;
-    let phases = ordered_phases(&resolved)?;
     let mut state = crate::state::StateStore::open(context.platform)?;
+    let mut package_plan = build_package_plan_with_providers(
+        context.runner,
+        request.platform,
+        &resolved,
+        modules,
+        request.yes,
+    )?;
+    if !request.yes {
+        match select_packages(&mut package_plan, context.terminal)? {
+            PackageSelection::Continue => {}
+            PackageSelection::Back if request.allow_module_back => {
+                return Ok(InstallOutcome::BackToModuleSelection);
+            }
+            PackageSelection::Back => {
+                return Err(InstallError::Usage(
+                    "module selection cannot return with explicit --modules".into(),
+                ));
+            }
+            PackageSelection::Cancel => return Err(InstallError::Cancelled),
+        }
+    }
+    let phases = ordered_phases(&resolved, &package_plan, request.platform, context.runner)?;
     // Applied modules satisfy mapping gates without joining the installation plan.
     let mapping_modules = modules
         .iter()
@@ -274,27 +255,53 @@ pub fn install_with_registry(
         })
         .map(|module| module.id.to_owned())
         .collect::<Vec<_>>();
-    let mut side_effects_started = false;
+    let deferred_packages = package_plan
+        .actions()
+        .iter()
+        .filter(|action| {
+            !PackageManagerAdapter::new(request.platform, action.manager).available(context.runner)
+        })
+        .map(|action| action.package_id.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut handled_packages = BTreeSet::new();
     for phase in phases {
-        let mut package_plan =
-            build_package_plan(context.runner, request.platform, &phase, request.yes)?;
-        if !request.yes {
-            match select_packages(&mut package_plan, context.terminal)? {
-                PackageSelection::Continue => {}
-                PackageSelection::Back => {
-                    if request.allow_module_back && !side_effects_started {
-                        return Ok(InstallOutcome::BackToModuleSelection);
-                    }
-                    return Err(InstallError::Usage(
-                        "module selection cannot return after installation has begun; rerun with --modules"
-                            .into(),
-                    ));
-                }
-                PackageSelection::Cancel => return Err(InstallError::Cancelled),
+        let module = phase[0];
+        for action in package_plan.actions().iter().filter(|action| {
+            module
+                .packages
+                .iter()
+                .any(|package| package.id == action.package_id)
+        }) {
+            if !handled_packages.insert(&action.package_id) {
+                continue;
             }
-        }
-        for action in package_plan.actions() {
             if action.selected {
+                let command_available =
+                    resolved
+                        .iter()
+                        .flat_map(|module| module.packages)
+                        .any(|package| {
+                            package.id == action.package_id
+                                && package
+                                    .command
+                                    .is_some_and(|command| context.runner.available(command))
+                        });
+                if command_available {
+                    continue;
+                }
+                let adapter = PackageManagerAdapter::new(request.platform, action.manager);
+                if !adapter.available(context.runner) {
+                    return Err(InstallError::Package(format!(
+                        "{} package {}: selected manager {} is not available after its provider phase",
+                        action.module, action.package_id, action.manager.label()
+                    )));
+                }
+                // Managers installed by an earlier phase could not be queried during planning.
+                if deferred_packages.contains(action.package_id.as_str())
+                    && adapter.installed(context.runner, &action.package_name)?
+                {
+                    continue;
+                }
                 install_package(context.runner, request.platform, action).map_err(|error| {
                     InstallError::Package(format!(
                         "{} package {}: {error}",
@@ -315,7 +322,6 @@ pub fn install_with_registry(
             }
         }
 
-        let module = phase[0];
         let probe_context = SetupProbeContext {
             platform: context.platform,
             runner: context.runner,
@@ -346,7 +352,6 @@ pub fn install_with_registry(
             http: context.http,
             secrets: secret_scope.as_ref().map(|scope| scope.values()),
         };
-        side_effects_started = true;
         if let Some(setup) = module.setup {
             setup(&setup_context)
                 .map_err(|error| InstallError::Setup(format!("{}: {error}", module.id)))?;

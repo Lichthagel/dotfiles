@@ -53,7 +53,7 @@ cargo run -- --modules git,powershell --yes
 - `--modules git,bash` selects modules without prompting.
 - `--apps git,bash` is a compatibility alias for `--modules`.
 - `--yes` selects the highest-priority available package manager and accepts
-  the complete package plan and derived phases without prompting.
+  the complete package plan and installation order without prompting.
 - `--list` lists modules supported by the current binary.
 - `--help` prints usage.
 
@@ -63,9 +63,9 @@ to approve that selection; toggle modules with Space. Provider modules such as
 `brew` and `scoop` start unchecked and are never added implicitly. Already
 available package managers can be used without selecting their provider module.
 Installing or configuring a missing manager requires selecting its module.
-`--yes` skips package and phase confirmation, but it does not approve
-additional modules. The checklist marks previously applied
-modules using a local state file, but that status does not change defaults or
+`--yes` skips package and installation-order confirmation, but it does not
+approve additional modules. The checklist marks previously applied modules
+using a local state file, but that status does not change defaults or
 prevent explicitly selected modules from running again. See [applied module state](docs/modules.md#applied-module-state) for paths
 and behavior.
 

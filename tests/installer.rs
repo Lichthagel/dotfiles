@@ -7,7 +7,7 @@ use dotfiles::cli::{InstallRequest, TerminalIo, TerminalKey};
 use dotfiles::engine::{
     install, install_with_registry, resolve_modules, InstallContext, InstallOutcome,
 };
-use dotfiles::engine::{ordered_phases, resolve_modules_from_registry};
+use dotfiles::engine::{installation_order, resolve_modules_from_registry};
 use dotfiles::error::Result;
 use dotfiles::model::{PackageManager, Platform};
 use dotfiles::packages::{build_package_plan, build_package_plan_with_providers};
@@ -590,25 +590,25 @@ fn all_packages_are_selected_once_before_installation() {
         .lines
         .iter()
         .any(|line| line.contains("mise -> apt")));
-    assert!(terminal.lines.iter().any(|line| line == "  Phase 1: git"));
-    assert!(terminal.lines.iter().any(|line| line == "  Phase 2: mise"));
+    assert!(terminal.lines.iter().any(|line| line == "  Step 1: git"));
+    assert!(terminal.lines.iter().any(|line| line == "  Step 2: mise"));
     let package_list = terminal
         .lines
         .iter()
         .position(|line| line.contains("git -> apt"))
         .unwrap();
-    let phase_list = terminal
+    let order_list = terminal
         .lines
         .iter()
-        .position(|line| line == "Derived installation phases:")
+        .position(|line| line == "Installation order:")
         .unwrap();
-    assert!(package_list < phase_list);
+    assert!(package_list < order_list);
     // An unchosen mise source must not force its provider ahead of Git.
     assert_eq!(runner.package_log(), ["git", "mise"]);
 }
 
 #[test]
-fn choosing_a_future_manager_adds_a_provider_phase_after_selection() {
+fn choosing_a_future_manager_orders_its_provider_before_the_consumer() {
     let runner = FakeRunner::apt_without_mise_then_mise_after_install().refresh_adds("mise");
     let fixture = InstallFixture::new(Platform::Linux);
     let mut terminal =
@@ -629,8 +629,8 @@ fn choosing_a_future_manager_adds_a_provider_phase_after_selection() {
         .lines
         .iter()
         .any(|line| line.contains("git -> mise")));
-    assert!(terminal.lines.iter().any(|line| line == "  Phase 1: mise"));
-    assert!(terminal.lines.iter().any(|line| line == "  Phase 2: git"));
+    assert!(terminal.lines.iter().any(|line| line == "  Step 1: mise"));
+    assert!(terminal.lines.iter().any(|line| line == "  Step 2: git"));
     assert_eq!(runner.package_log(), ["mise"]);
     let calls = runner.calls();
     let provider = calls
@@ -678,7 +678,7 @@ fn cancelling_package_selection_leaves_earlier_modules_untouched() {
 }
 
 #[test]
-fn declining_derived_phases_prevents_package_and_module_changes() {
+fn declining_installation_order_prevents_package_and_module_changes() {
     let runner = FakeRunner::apt_without_mise_then_mise_after_install();
     let fixture = InstallFixture::new(Platform::Linux);
     let mut terminal = SelectionTerminal::new([TerminalKey::Enter, TerminalKey::Escape]);
@@ -695,14 +695,14 @@ fn declining_derived_phases_prevents_package_and_module_changes() {
     .unwrap_err();
 
     assert!(matches!(error, dotfiles::error::InstallError::Cancelled));
-    assert!(terminal.lines.iter().any(|line| line == "  Phase 1: git"));
+    assert!(terminal.lines.iter().any(|line| line == "  Step 1: git"));
     assert!(runner.package_log().is_empty());
     assert!(!fixture.target(".gitconfig").exists());
     assert!(!fixture.ops.state_path().unwrap().exists());
 }
 
 #[test]
-fn noninteractive_setup_without_yes_requires_phase_confirmation() {
+fn noninteractive_setup_without_yes_requires_order_confirmation() {
     let runner = FakeRunner::available(["git"]);
     let mut fixture = InstallFixture::new(Platform::Linux);
     let error = install(
@@ -711,13 +711,13 @@ fn noninteractive_setup_without_yes_requires_phase_confirmation() {
     )
     .unwrap_err();
 
-    assert!(error.to_string().contains("phase confirmation"));
+    assert!(error.to_string().contains("order confirmation"));
     assert!(!fixture.target(".gitconfig").exists());
     assert!(!fixture.ops.state_path().unwrap().exists());
 }
 
 #[test]
-fn shared_packages_are_installed_once_across_module_phases() {
+fn shared_packages_are_installed_once_across_module_order() {
     let runner = FakeRunner::apt_without_mise_then_mise_after_install();
     let modules = [
         ModuleSpec {
@@ -780,12 +780,14 @@ fn only_selected_packages_and_managers_contribute_provider_dependencies() {
     let mut plan =
         build_package_plan_with_providers(&runner, Platform::Linux, &resolved, &modules, true)
             .unwrap();
-    assert!(ordered_phases(&resolved, &plan, Platform::Linux, &runner).is_ok());
+    assert!(installation_order(&resolved, &plan, Platform::Linux, &runner).is_ok());
     plan.actions_mut()[0].manager = PackageManager::Mise;
-    assert!(ordered_phases(&resolved, &plan, Platform::Linux, &runner)
-        .unwrap_err()
-        .to_string()
-        .contains("cycle"));
+    assert!(
+        installation_order(&resolved, &plan, Platform::Linux, &runner)
+            .unwrap_err()
+            .to_string()
+            .contains("cycle")
+    );
 
     let fixture = InstallFixture::new(Platform::Linux);
     let mut terminal = SelectionTerminal::new([TerminalKey::Right, TerminalKey::Enter]);
@@ -810,7 +812,7 @@ fn only_selected_packages_and_managers_contribute_provider_dependencies() {
     assert!(!fixture.ops.state_path().unwrap().exists());
 
     plan.actions_mut()[0].selected = false;
-    assert!(ordered_phases(&resolved, &plan, Platform::Linux, &runner).is_ok());
+    assert!(installation_order(&resolved, &plan, Platform::Linux, &runner).is_ok());
 }
 
 #[test]
@@ -841,7 +843,7 @@ fn already_available_managers_do_not_create_provider_cycles() {
 }
 
 #[test]
-fn provider_phase_precedes_dependent_package_phase() {
+fn provider_module_is_installed_before_dependent_package_setup() {
     let runner = FakeRunner::apt_without_mise_then_mise_after_install();
     let mut fixture = InstallFixture::new(Platform::Linux);
     install(
@@ -998,7 +1000,7 @@ fn selecting_mise_with_powershell_installs_its_activation_dropin() {
 }
 
 #[test]
-fn refresh_makes_provider_available_to_dependent_phase() {
+fn refresh_makes_provider_available_to_dependent_module() {
     let runner =
         FakeRunner::available(["apt", "dpkg-query", "run0", "apt-get"]).refresh_adds("mise");
     let mut fixture = InstallFixture::new(Platform::Linux);
@@ -1093,8 +1095,8 @@ fn shell_prerequisites_are_not_implicitly_resolved_but_order_explicit_modules() 
     )
     .unwrap();
     let plan = build_package_plan(&runner, Platform::Linux, &resolved, true).unwrap();
-    let phases = ordered_phases(&resolved, &plan, Platform::Linux, &runner).unwrap();
-    let ids: Vec<_> = phases.iter().map(|phase| phase[0].id).collect();
+    let order = installation_order(&resolved, &plan, Platform::Linux, &runner).unwrap();
+    let ids: Vec<_> = order.iter().map(|module| module.id).collect();
     assert_eq!(ids, ["bash", "oh-my-posh"]);
 }
 
@@ -1209,8 +1211,13 @@ fn synthetic_dependency_cycles_are_rejected() {
     static CYCLE: &[ModuleSpec] = &[A, B];
 
     let runner = FakeRunner::available(std::iter::empty::<&str>());
-    let error = resolve_modules_from_registry(&["cycle-a".into()], Platform::Linux, &runner, CYCLE)
-        .unwrap_err();
+    let error = resolve_modules_from_registry(
+        &["cycle-a".into(), "cycle-b".into()],
+        Platform::Linux,
+        &runner,
+        CYCLE,
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("cycle-a -> cycle-b -> cycle-a"));
 }
 

@@ -39,9 +39,9 @@ cargo run -- --modules git,powershell,mise --yes
 ```
 
 `--apps` is a compatibility alias for `--modules`. `--yes` accepts the package
-plan and derived phases without prompting; it does not authorize additional
-modules. Unattended setup still requires explicit module selection. Use `--list` to list modules
-supported by the current binary.
+plan and installation order without prompting; it does not authorize additional
+modules. Unattended setup still requires explicit module selection. Use `--list`
+to list modules supported by the current binary.
 
 Each module declares packages as a `Package` with a stable `id`, an optional
 `command`, and nested `PackageSource` alternatives (`manager` and package `name`).
@@ -52,14 +52,14 @@ example, Git declares ID `git`, command `Some("git")`, and a Winget source named
 combined. The installer builds one package checklist for all selected modules
 before installing any packages or applying module configuration. Left/Right
 chooses a manager and Space skips a package. After package selection, it
-calculates and displays the ordered installation phases, then asks for final
-confirmation before making changes. Returning with `b` or cancelling either
-prompt does not apply any modules. `--yes` accepts the package plan and derived
-phases without prompting. Phases follow module and mapping requirements plus
-the chosen packages' provider dependencies. Unchosen sources and skipped
-packages do not add provider dependencies, and an already available manager
-needs no provider phase. Shared package IDs are installed only once, before the
-first module that needs them.
+calculates and displays the installation order as numbered module steps, then
+asks for final confirmation before making changes. Returning with `b` or
+cancelling either prompt does not apply any modules. `--yes` accepts the package
+plan and installation order without prompting. The order follows module and
+mapping requirements, plus the chosen packages' provider dependencies. Unchosen
+sources and skipped packages do not add provider dependencies, and an already
+available manager needs no provider-module step. Shared package IDs are installed
+only once, before the first module that needs them.
 
 Package installation is skipped when the explicitly declared command is already
 in `PATH`. This check happens before package-manager queries and provider

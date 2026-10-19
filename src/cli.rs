@@ -414,25 +414,23 @@ fn render_modules(
     Ok(())
 }
 
-pub fn confirm_phases(phases: &[Vec<&ModuleSpec>], terminal: &mut dyn TerminalIo) -> Result<()> {
+pub fn confirm_installation_order(
+    modules: &[&ModuleSpec],
+    terminal: &mut dyn TerminalIo,
+) -> Result<()> {
     if !terminal.is_interactive() {
         return Err(InstallError::Usage(
-            "phase confirmation requires a terminal; use --yes to proceed noninteractively".into(),
+            "installation-order confirmation requires a terminal; use --yes to proceed noninteractively".into(),
         ));
     }
     let _raw_mode = terminal.enter_raw_mode()?;
     terminal.clear()?;
-    terminal.write_menu_line("Derived installation phases:", MenuStyle::Heading)?;
-    for (index, phase) in phases.iter().enumerate() {
-        let modules = phase
-            .iter()
-            .map(|module| module.id)
-            .collect::<Vec<_>>()
-            .join(", ");
-        terminal.write_line(&format!("  Phase {}: {modules}", index + 1))?;
+    terminal.write_menu_line("Installation order:", MenuStyle::Heading)?;
+    for (index, module) in modules.iter().enumerate() {
+        terminal.write_line(&format!("  Step {}: {}", index + 1, module.id))?;
     }
     terminal.write_menu_line(
-        "Proceed with these phases? Enter/Y to continue; Esc/Q/N to cancel:",
+        "Proceed with this order? Enter/Y to continue; Esc/Q/N to cancel:",
         MenuStyle::Heading,
     )?;
 
@@ -502,7 +500,7 @@ pub fn select_packages(
 fn render_packages(plan: &PackagePlan, cursor: usize, terminal: &mut dyn TerminalIo) -> Result<()> {
     terminal.clear()?;
     terminal.write_menu_line(
-        "Package plan (Up/Down move, Left/Right manager, Space toggle, Enter review phases, b back):",
+        "Package plan (Up/Down move, Left/Right manager, Space toggle, Enter review order, b back):",
         MenuStyle::Heading,
     )?;
     for (index, action) in plan.actions.iter().enumerate() {

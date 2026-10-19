@@ -1,4 +1,6 @@
-use crate::cli::{confirm_phases, select_packages, InstallRequest, PackageSelection, TerminalIo};
+use crate::cli::{
+    confirm_installation_order, select_packages, InstallRequest, PackageSelection, TerminalIo,
+};
 use crate::error::{InstallError, Result};
 use crate::mappings::apply_module_mappings;
 use crate::model::Platform;
@@ -131,18 +133,18 @@ pub fn resolve_modules_from_registry<'a>(
     Ok(resolver.ordered)
 }
 
-pub fn ordered_phases<'a>(
+pub fn installation_order<'a>(
     modules: &[&'a ModuleSpec],
     package_plan: &PackagePlan,
     platform: Platform,
     runner: &dyn CommandRunner,
-) -> Result<Vec<Vec<&'a ModuleSpec>>> {
+) -> Result<Vec<&'a ModuleSpec>> {
     let by_id = modules
         .iter()
         .map(|module| (module.id, *module))
         .collect::<BTreeMap<_, _>>();
     let mut emitted = BTreeSet::new();
-    let mut phases = Vec::with_capacity(modules.len());
+    let mut order = Vec::with_capacity(modules.len());
 
     while emitted.len() < modules.len() {
         let mut progress = false;
@@ -181,7 +183,7 @@ pub fn ordered_phases<'a>(
                 provider_dependencies.all(|provider| emitted.contains(provider.id));
             if dependencies_ready && providers_ready {
                 emitted.insert(module.id);
-                phases.push(vec![*module]);
+                order.push(*module);
                 progress = true;
             }
         }
@@ -197,7 +199,7 @@ pub fn ordered_phases<'a>(
             )));
         }
     }
-    Ok(phases)
+    Ok(order)
 }
 
 pub fn install(request: InstallRequest, context: InstallContext<'_>) -> Result<InstallOutcome> {
@@ -244,9 +246,9 @@ pub fn install_with_registry(
             PackageSelection::Cancel => return Err(InstallError::Cancelled),
         }
     }
-    let phases = ordered_phases(&resolved, &package_plan, request.platform, context.runner)?;
+    let order = installation_order(&resolved, &package_plan, request.platform, context.runner)?;
     if !request.yes {
-        confirm_phases(&phases, context.terminal)?;
+        confirm_installation_order(&order, context.terminal)?;
     }
     // Applied modules satisfy mapping gates without joining the installation plan.
     let mapping_modules = modules
@@ -267,8 +269,7 @@ pub fn install_with_registry(
         .map(|action| action.package_id.as_str())
         .collect::<BTreeSet<_>>();
     let mut handled_packages = BTreeSet::new();
-    for phase in phases {
-        let module = phase[0];
+    for module in order {
         for action in package_plan.actions().iter().filter(|action| {
             module
                 .packages
@@ -295,11 +296,11 @@ pub fn install_with_registry(
                 let adapter = PackageManagerAdapter::new(request.platform, action.manager);
                 if !adapter.available(context.runner) {
                     return Err(InstallError::Package(format!(
-                        "{} package {}: selected manager {} is not available after its provider phase",
+                        "{} package {}: selected manager {} is still unavailable after its provider module runs",
                         action.module, action.package_id, action.manager.label()
                     )));
                 }
-                // Managers installed by an earlier phase could not be queried during planning.
+                // Managers installed by an earlier module could not be queried during planning.
                 if deferred_packages.contains(action.package_id.as_str())
                     && adapter.installed(context.runner, &action.package_name)?
                 {

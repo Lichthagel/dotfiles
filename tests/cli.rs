@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use clap::Parser;
 use dotfiles::cli::{
-    parse_modules, select_modules, select_modules_with_state, select_packages, validate_modules,
-    Cli, CrosstermTerminal, MenuStyle, PackageSelection, TerminalIo, TerminalKey,
+    confirm_phases, parse_modules, select_modules, select_modules_with_state, select_packages,
+    validate_modules, Cli, CrosstermTerminal, MenuStyle, PackageSelection, TerminalIo, TerminalKey,
 };
 use dotfiles::error::{ExitCategory, InstallError};
 use dotfiles::model::{PackageManager, Platform};
@@ -233,6 +233,36 @@ fn package_plan() -> PackagePlan {
             ],
         )]),
     }
+}
+
+#[test]
+fn phase_confirmation_displays_the_derived_order_and_accepts() {
+    let phases = vec![
+        vec![registry::find_module("mise").unwrap()],
+        vec![registry::find_module("git").unwrap()],
+    ];
+    let mut terminal = FakeTerminal::interactive([TerminalKey::Enter]);
+
+    confirm_phases(&phases, &mut terminal).unwrap();
+
+    assert!(terminal.output.contains("Derived installation phases:"));
+    assert!(terminal.output.contains("Phase 1: mise"));
+    assert!(terminal.output.contains("Phase 2: git"));
+    assert!(terminal.output.contains("Proceed with these phases?"));
+}
+
+#[test]
+fn phase_confirmation_can_be_cancelled_or_requires_a_terminal() {
+    let phases = vec![vec![registry::find_module("git").unwrap()]];
+    let mut terminal = FakeTerminal::interactive([TerminalKey::Char('n')]);
+    assert!(matches!(
+        confirm_phases(&phases, &mut terminal),
+        Err(InstallError::Cancelled)
+    ));
+
+    let mut terminal = FakeTerminal::noninteractive();
+    let error = confirm_phases(&phases, &mut terminal).unwrap_err();
+    assert!(error.to_string().contains("use --yes"));
 }
 
 #[test]

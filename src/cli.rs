@@ -414,6 +414,39 @@ fn render_modules(
     Ok(())
 }
 
+pub fn confirm_phases(phases: &[Vec<&ModuleSpec>], terminal: &mut dyn TerminalIo) -> Result<()> {
+    if !terminal.is_interactive() {
+        return Err(InstallError::Usage(
+            "phase confirmation requires a terminal; use --yes to proceed noninteractively".into(),
+        ));
+    }
+    let _raw_mode = terminal.enter_raw_mode()?;
+    terminal.clear()?;
+    terminal.write_menu_line("Derived installation phases:", MenuStyle::Heading)?;
+    for (index, phase) in phases.iter().enumerate() {
+        let modules = phase
+            .iter()
+            .map(|module| module.id)
+            .collect::<Vec<_>>()
+            .join(", ");
+        terminal.write_line(&format!("  Phase {}: {modules}", index + 1))?;
+    }
+    terminal.write_menu_line(
+        "Proceed with these phases? Enter/Y to continue; Esc/Q/N to cancel:",
+        MenuStyle::Heading,
+    )?;
+
+    loop {
+        match terminal.read_key()? {
+            TerminalKey::Enter | TerminalKey::Char('y' | 'Y') => return Ok(()),
+            TerminalKey::Escape | TerminalKey::Char('q' | 'Q' | 'n' | 'N') => {
+                return Err(InstallError::Cancelled)
+            }
+            _ => {}
+        }
+    }
+}
+
 pub fn select_packages(
     plan: &mut PackagePlan,
     terminal: &mut dyn TerminalIo,
@@ -469,7 +502,7 @@ pub fn select_packages(
 fn render_packages(plan: &PackagePlan, cursor: usize, terminal: &mut dyn TerminalIo) -> Result<()> {
     terminal.clear()?;
     terminal.write_menu_line(
-        "Package plan (Up/Down move, Left/Right manager, Space toggle, Enter install, b back):",
+        "Package plan (Up/Down move, Left/Right manager, Space toggle, Enter review phases, b back):",
         MenuStyle::Heading,
     )?;
     for (index, action) in plan.actions.iter().enumerate() {

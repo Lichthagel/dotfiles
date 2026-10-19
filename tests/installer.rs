@@ -201,26 +201,24 @@ fn git_installs_before_mapping() {
 #[test]
 fn existing_commands_allow_dotfiles_without_a_package_manager() {
     for platform in [Platform::Linux, Platform::Windows] {
-        for yes in [false, true] {
-            let runner = FakeRunner::available(["git"]);
-            let mut fixture = InstallFixture::new(platform);
-            install(
-                InstallRequest::explicit(["git"], yes, platform),
-                test_context(&mut fixture, &runner),
-            )
-            .unwrap();
+        let runner = FakeRunner::available(["git"]);
+        let mut fixture = InstallFixture::new(platform);
+        install(
+            InstallRequest::explicit(["git"], true, platform),
+            test_context(&mut fixture, &runner),
+        )
+        .unwrap();
 
-            assert!(runner.calls().is_empty());
-            assert_eq!(runner.refresh_count(), 0);
-            assert_eq!(
-                fs::read(fixture.target(".gitconfig")).unwrap(),
-                include_bytes!("../modules/git/gitconfig")
-            );
-            let state = ModuleState::load(&fixture.ops.state_path().unwrap()).unwrap();
-            assert!(state.contains("git"));
-            assert!(!state.contains("mise"));
-            assert!(!state.contains("scoop"));
-        }
+        assert!(runner.calls().is_empty());
+        assert_eq!(runner.refresh_count(), 0);
+        assert_eq!(
+            fs::read(fixture.target(".gitconfig")).unwrap(),
+            include_bytes!("../modules/git/gitconfig")
+        );
+        let state = ModuleState::load(&fixture.ops.state_path().unwrap()).unwrap();
+        assert!(state.contains("git"));
+        assert!(!state.contains("mise"));
+        assert!(!state.contains("scoop"));
     }
 }
 
@@ -546,7 +544,8 @@ fn intentionally_skipped_packages_do_not_prevent_recording_applied_dotfiles() {
     }
     let runner = FakeRunner::apt_without_mise_then_mise_after_install();
     let fixture = InstallFixture::new(Platform::Linux);
-    let mut terminal = ToggleTerminal([TerminalKey::Space, TerminalKey::Enter].into());
+    let mut terminal =
+        ToggleTerminal([TerminalKey::Space, TerminalKey::Enter, TerminalKey::Enter].into());
     install(
         InstallRequest::explicit(["git"], false, Platform::Linux),
         InstallContext {
@@ -569,7 +568,7 @@ fn intentionally_skipped_packages_do_not_prevent_recording_applied_dotfiles() {
 fn all_packages_are_selected_once_before_installation() {
     let runner = FakeRunner::apt_without_mise_then_mise_after_install();
     let fixture = InstallFixture::new(Platform::Linux);
-    let mut terminal = SelectionTerminal::new([TerminalKey::Enter]);
+    let mut terminal = SelectionTerminal::new([TerminalKey::Enter, TerminalKey::Enter]);
     install(
         InstallRequest::explicit(["git", "mise"], false, Platform::Linux),
         InstallContext {
@@ -591,6 +590,19 @@ fn all_packages_are_selected_once_before_installation() {
         .lines
         .iter()
         .any(|line| line.contains("mise -> apt")));
+    assert!(terminal.lines.iter().any(|line| line == "  Phase 1: git"));
+    assert!(terminal.lines.iter().any(|line| line == "  Phase 2: mise"));
+    let package_list = terminal
+        .lines
+        .iter()
+        .position(|line| line.contains("git -> apt"))
+        .unwrap();
+    let phase_list = terminal
+        .lines
+        .iter()
+        .position(|line| line == "Derived installation phases:")
+        .unwrap();
+    assert!(package_list < phase_list);
     // An unchosen mise source must not force its provider ahead of Git.
     assert_eq!(runner.package_log(), ["git", "mise"]);
 }
@@ -599,7 +611,8 @@ fn all_packages_are_selected_once_before_installation() {
 fn choosing_a_future_manager_adds_a_provider_phase_after_selection() {
     let runner = FakeRunner::apt_without_mise_then_mise_after_install().refresh_adds("mise");
     let fixture = InstallFixture::new(Platform::Linux);
-    let mut terminal = SelectionTerminal::new([TerminalKey::Right, TerminalKey::Enter]);
+    let mut terminal =
+        SelectionTerminal::new([TerminalKey::Right, TerminalKey::Enter, TerminalKey::Enter]);
     install(
         InstallRequest::explicit(["git", "mise"], false, Platform::Linux),
         InstallContext {
@@ -616,6 +629,8 @@ fn choosing_a_future_manager_adds_a_provider_phase_after_selection() {
         .lines
         .iter()
         .any(|line| line.contains("git -> mise")));
+    assert!(terminal.lines.iter().any(|line| line == "  Phase 1: mise"));
+    assert!(terminal.lines.iter().any(|line| line == "  Phase 2: git"));
     assert_eq!(runner.package_log(), ["mise"]);
     let calls = runner.calls();
     let provider = calls
@@ -659,6 +674,45 @@ fn cancelling_package_selection_leaves_earlier_modules_untouched() {
     assert!(matches!(error, dotfiles::error::InstallError::Cancelled));
     assert!(runner.package_log().is_empty());
     assert!(!fixture.target(".bashrc").exists());
+    assert!(!fixture.ops.state_path().unwrap().exists());
+}
+
+#[test]
+fn declining_derived_phases_prevents_package_and_module_changes() {
+    let runner = FakeRunner::apt_without_mise_then_mise_after_install();
+    let fixture = InstallFixture::new(Platform::Linux);
+    let mut terminal = SelectionTerminal::new([TerminalKey::Enter, TerminalKey::Escape]);
+    let error = install(
+        InstallRequest::explicit(["git"], false, Platform::Linux),
+        InstallContext {
+            platform: &fixture.ops,
+            runner: &runner,
+            http: &fixture.http,
+            terminal: &mut terminal,
+            timestamp: &fixture.timestamp,
+        },
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, dotfiles::error::InstallError::Cancelled));
+    assert!(terminal.lines.iter().any(|line| line == "  Phase 1: git"));
+    assert!(runner.package_log().is_empty());
+    assert!(!fixture.target(".gitconfig").exists());
+    assert!(!fixture.ops.state_path().unwrap().exists());
+}
+
+#[test]
+fn noninteractive_setup_without_yes_requires_phase_confirmation() {
+    let runner = FakeRunner::available(["git"]);
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    let error = install(
+        InstallRequest::explicit(["git"], false, Platform::Linux),
+        test_context(&mut fixture, &runner),
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("phase confirmation"));
+    assert!(!fixture.target(".gitconfig").exists());
     assert!(!fixture.ops.state_path().unwrap().exists());
 }
 
@@ -971,7 +1025,7 @@ fn deferred_manager_records_are_checked_without_another_selection() {
     let runner = FakeRunner::apt_without_mise_then_mise_after_install().refresh_adds("mise");
     runner.mark_installed("mise", "consumer");
     let fixture = InstallFixture::new(Platform::Linux);
-    let mut terminal = SelectionTerminal::new([TerminalKey::Enter]);
+    let mut terminal = SelectionTerminal::new([TerminalKey::Enter, TerminalKey::Enter]);
     install_with_registry(
         InstallRequest::explicit(
             ["test-mise-consumer", "test-mise-provider"],

@@ -1,4 +1,4 @@
-use crate::cli::{select_packages, InstallRequest, PackageSelection, TerminalIo};
+use crate::cli::{confirm_phases, select_packages, InstallRequest, PackageSelection, TerminalIo};
 use crate::error::{InstallError, Result};
 use crate::mappings::apply_module_mappings;
 use crate::model::Platform;
@@ -245,6 +245,9 @@ pub fn install_with_registry(
         }
     }
     let phases = ordered_phases(&resolved, &package_plan, request.platform, context.runner)?;
+    if !request.yes {
+        confirm_phases(&phases, context.terminal)?;
+    }
     // Applied modules satisfy mapping gates without joining the installation plan.
     let mapping_modules = modules
         .iter()

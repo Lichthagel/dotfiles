@@ -24,7 +24,7 @@ their provider module.
 | `scoop` | Windows | No | Sets up Scoop as a package manager and provides optional PowerShell integration. |
 | `atuin` | Linux, Windows | No | Installs Atuin shell history, provides optional shell integration, and configures sync login when credentials are available. |
 | `oh-my-posh` | Linux, Windows | No | Installs Oh My Posh, writes its configuration to `~/.config/oh-my-posh/config.json` on Linux or beside the PowerShell profile on Windows, and provides optional shell integration. |
-| `opencode` | Linux, Windows | No | Installs and configures OpenCode, fetches themes, and optionally configures provider credentials. |
+| `opencode` | Linux, Windows | No | Installs OpenCode, writes a v2 config referencing the [JSON Schema](https://opencode.ai/config.json), fetches themes, and optionally configures provider credentials. |
 
 ## Selecting Modules
 
@@ -136,6 +136,15 @@ State updates use atomic replacement. An OS-managed lock on the adjacent
 is released when the installer exits. Invalid or unsupported state causes an
 error before installation changes rather than silently discarding records.
 State files are local to the user and should not be committed.
+
+## OpenCode Configuration
+
+The OpenCode module writes v2 configuration keys: `providers`, `mcp.servers`, and
+`plugins`. It adds `$schema: "https://opencode.ai/config.json"` for editor
+validation and migrates legacy MCP-server and plugin entries. When provider
+credentials are configured, legacy provider records are converted as well.
+Provider credentials remain in protected files and are referenced with
+`{file:...}`.
 
 ## OpenCode Theme Downloads
 

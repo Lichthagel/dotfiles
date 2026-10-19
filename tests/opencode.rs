@@ -48,28 +48,28 @@ fn opencode_is_idempotent_and_does_not_write_secret_values_to_config() {
     assert_eq!(fixture.value_count_in_config("openrouter-test-secret"), 0);
     let config = fixture.read_config();
     assert_eq!(
-        config["provider"]["openrouter"]["options"]["apiKey"],
+        config["providers"]["openrouter"]["settings"]["apiKey"],
         format!(
             "{{file:{}}}",
             fixture.config_dir().join("openrouter-api-key").display()
         )
     );
     assert_eq!(
-        config["provider"]["azure"]["options"]["apiKey"],
+        config["providers"]["azure"]["settings"]["apiKey"],
         format!(
             "{{file:{}}}",
             fixture.config_dir().join("azure-api-key").display()
         )
     );
     assert_eq!(
-        config["provider"]["azure"]["options"]["resourceName"],
+        config["providers"]["azure"]["settings"]["resourceName"],
         format!(
             "{{file:{}}}",
             fixture.config_dir().join("azure-resource-name").display()
         )
     );
     assert_eq!(
-        config["provider"]["digitalocean"]["options"]["apiKey"],
+        config["providers"]["digitalocean"]["settings"]["apiKey"],
         format!(
             "{{file:{}}}",
             fixture
@@ -80,10 +80,65 @@ fn opencode_is_idempotent_and_does_not_write_secret_values_to_config() {
     );
     assert_eq!(config["unrelated"]["keep"], true);
     assert_eq!(
-        fixture.read_config()["mcp"]["ddg-search"]["command"],
+        fixture.read_config()["mcp"]["servers"]["ddg-search"]["command"],
         serde_json::json!(["uvx", "duckduckgo-mcp-server"])
     );
-    assert!(!fixture.read_config().get("theme").is_some());
+    let config = fixture.read_config();
+    assert_eq!(config["$schema"], "https://opencode.ai/config.json");
+    assert_eq!(config["plugins"].as_array().unwrap().len(), 2);
+    assert!(config.get("plugin").is_none());
+    assert!(config.get("theme").is_none());
+}
+
+#[test]
+fn legacy_opencode_settings_are_migrated_to_v2_shapes() {
+    let fixture = OpenCodeFixture::for_platform_with_secrets(Platform::Linux);
+    let _config_home =
+        support::ScopedXdgConfigHome::new(fixture.config_dir().parent().expect("config home"));
+    fs::create_dir_all(fixture.config_dir()).unwrap();
+    fs::write(
+        fixture.config_file(),
+        r#"{
+          "provider": {
+            "custom": {"npm": "@example/provider", "options": {"baseURL": "https://api.example.test"}},
+            "openrouter": {"options": {"legacySetting": true}}
+          },
+          "mcp": {
+            "legacy-search": {"type": "local", "command": ["legacy-mcp"]},
+            "timeout": {"startup": 1000}
+          },
+          "plugin": ["legacy-plugin", ["tuple-plugin", {"enabled": true}]]
+        }"#,
+    )
+    .unwrap();
+
+    configure_opencode(&fixture.context()).unwrap();
+    let config = fixture.read_config();
+
+    assert!(config.get("provider").is_none());
+    assert_eq!(
+        config["providers"]["custom"]["package"],
+        "@example/provider"
+    );
+    assert_eq!(
+        config["providers"]["custom"]["settings"]["baseURL"],
+        "https://api.example.test"
+    );
+    assert_eq!(
+        config["providers"]["openrouter"]["settings"]["legacySetting"],
+        true
+    );
+    assert_eq!(
+        config["mcp"]["servers"]["legacy-search"]["command"],
+        serde_json::json!(["legacy-mcp"])
+    );
+    assert_eq!(config["mcp"]["timeout"]["startup"], 1000);
+    assert_eq!(config["plugins"][0], "legacy-plugin");
+    assert_eq!(
+        config["plugins"][1],
+        serde_json::json!({"package": "tuple-plugin", "options": {"enabled": true}})
+    );
+    assert!(config.get("plugin").is_none());
 }
 
 fn count_files(root: &std::path::Path) -> usize {

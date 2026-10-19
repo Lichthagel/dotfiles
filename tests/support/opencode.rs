@@ -262,7 +262,7 @@ impl OpenCodeFixture {
 
     pub fn plugin_count(&self, name: &str) -> usize {
         self.read_config()
-            .get("plugin")
+            .get("plugins")
             .and_then(serde_json::Value::as_array)
             .into_iter()
             .flatten()

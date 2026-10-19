@@ -50,6 +50,7 @@ pub const SPEC: ModuleSpec = ModuleSpec {
 };
 
 pub const SUPERPOWERS_PLUGIN: &str = "superpowers@git+https://github.com/obra/superpowers.git";
+const OPENCODE_CONFIG_SCHEMA: &str = "https://opencode.ai/config.json";
 const REQUIRED_PROVIDER_SECRETS: [&str; 4] = [
     "OPENROUTER_API_KEY",
     "AZURE_API_KEY",
@@ -185,34 +186,46 @@ fn update_configuration(
         InstallError::Setup("OpenCode configuration root must be a JSON object".into())
     })?;
 
+    object.insert(
+        "$schema".into(),
+        Value::String(OPENCODE_CONFIG_SCHEMA.to_owned()),
+    );
+
     if configure_providers {
-        let provider = object
-            .entry("provider".to_owned())
-            .or_insert_with(|| Value::Object(Map::new()));
-        let provider = provider.as_object_mut().ok_or_else(|| {
-            InstallError::Setup("OpenCode provider configuration must be an object".into())
-        })?;
-        provider.insert(
-            "openrouter".into(),
-            serde_json::json!({
-                "options": {"apiKey": format!("{{file:{}}}", config_dir.join("openrouter-api-key").display())}
-            }),
-        );
-        provider.insert(
-            "azure".into(),
-            serde_json::json!({
-                "options": {
-                    "apiKey": format!("{{file:{}}}", config_dir.join("azure-api-key").display()),
-                    "resourceName": format!("{{file:{}}}", config_dir.join("azure-resource-name").display())
-                }
-            }),
-        );
-        provider.insert(
-            "digitalocean".into(),
-            serde_json::json!({
-                "options": {"apiKey": format!("{{file:{}}}", config_dir.join("digitalocean-access-token").display())}
-            }),
-        );
+        migrate_legacy_providers(object)?;
+        set_provider_setting(
+            object,
+            "openrouter",
+            "apiKey",
+            format!(
+                "{{file:{}}}",
+                config_dir.join("openrouter-api-key").display()
+            ),
+        )?;
+        set_provider_setting(
+            object,
+            "azure",
+            "apiKey",
+            format!("{{file:{}}}", config_dir.join("azure-api-key").display()),
+        )?;
+        set_provider_setting(
+            object,
+            "azure",
+            "resourceName",
+            format!(
+                "{{file:{}}}",
+                config_dir.join("azure-resource-name").display()
+            ),
+        )?;
+        set_provider_setting(
+            object,
+            "digitalocean",
+            "apiKey",
+            format!(
+                "{{file:{}}}",
+                config_dir.join("digitalocean-access-token").display()
+            ),
+        )?;
     }
 
     let mcp = object
@@ -221,7 +234,27 @@ fn update_configuration(
     let mcp = mcp.as_object_mut().ok_or_else(|| {
         InstallError::Setup("OpenCode mcp configuration must be an object".into())
     })?;
-    mcp.insert(
+    let mut legacy_servers = Map::new();
+    let legacy_keys: Vec<_> = mcp
+        .keys()
+        .filter(|key| !matches!(key.as_str(), "timeout" | "servers"))
+        .cloned()
+        .collect();
+    for key in legacy_keys {
+        if let Some(server) = mcp.remove(&key) {
+            legacy_servers.insert(key, server);
+        }
+    }
+    let servers = mcp
+        .entry("servers".to_owned())
+        .or_insert_with(|| Value::Object(Map::new()));
+    let servers = servers.as_object_mut().ok_or_else(|| {
+        InstallError::Setup("OpenCode MCP servers configuration must be an object".into())
+    })?;
+    for (name, server) in legacy_servers {
+        servers.entry(name).or_insert(server);
+    }
+    servers.insert(
         "ddg-search".into(),
         serde_json::json!({
             "type": "local",
@@ -230,14 +263,144 @@ fn update_configuration(
         }),
     );
 
+    migrate_legacy_plugins(object)?;
     let plugins = object
-        .entry("plugin".to_owned())
+        .entry("plugins".to_owned())
         .or_insert_with(|| Value::Array(Vec::new()));
     let plugins = plugins.as_array_mut().ok_or_else(|| {
-        InstallError::Setup("OpenCode plugin configuration must be an array".into())
+        InstallError::Setup("OpenCode plugins configuration must be an array".into())
     })?;
     plugins.retain(|plugin| plugin.as_str() != Some(SUPERPOWERS_PLUGIN));
     plugins.push(Value::String(SUPERPOWERS_PLUGIN.to_owned()));
+    Ok(())
+}
+
+fn migrate_legacy_plugins(object: &mut Map<String, Value>) -> Result<()> {
+    let Some(legacy) = object.remove("plugin") else {
+        return Ok(());
+    };
+    let legacy = legacy.as_array().ok_or_else(|| {
+        InstallError::Setup("OpenCode legacy plugin configuration must be an array".into())
+    })?;
+    let plugins = object
+        .entry("plugins".to_owned())
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let plugins = plugins.as_array_mut().ok_or_else(|| {
+        InstallError::Setup("OpenCode plugins configuration must be an array".into())
+    })?;
+    let mut migrated = legacy.iter().cloned().map(|plugin| match plugin {
+        Value::Array(mut parts) if parts.len() == 2 && parts[0].is_string() => {
+            let options = parts.pop().expect("two plugin tuple elements");
+            let package = parts.pop().expect("two plugin tuple elements");
+            serde_json::json!({"package": package, "options": options})
+        }
+        plugin => plugin,
+    });
+    let mut combined: Vec<_> = migrated.by_ref().collect();
+    combined.append(plugins);
+    *plugins = combined;
+    Ok(())
+}
+
+fn migrate_legacy_providers(object: &mut Map<String, Value>) -> Result<()> {
+    let Some(legacy) = object.remove("provider") else {
+        return Ok(());
+    };
+    let legacy = legacy.as_object().ok_or_else(|| {
+        InstallError::Setup("OpenCode legacy provider configuration must be an object".into())
+    })?;
+    let providers = object
+        .entry("providers".to_owned())
+        .or_insert_with(|| Value::Object(Map::new()));
+    let providers = providers.as_object_mut().ok_or_else(|| {
+        InstallError::Setup("OpenCode providers configuration must be an object".into())
+    })?;
+    for (id, legacy_config) in legacy {
+        let mut migrated = legacy_config.clone();
+        let config = migrated.as_object_mut().ok_or_else(|| {
+            InstallError::Setup(format!(
+                "OpenCode provider {id} configuration must be an object"
+            ))
+        })?;
+        if let Some(package) = config.remove("npm") {
+            config.entry("package").or_insert(package);
+        }
+        if let Some(options) = config.remove("options") {
+            let options = options.as_object().ok_or_else(|| {
+                InstallError::Setup(format!("OpenCode provider {id} options must be an object"))
+            })?;
+            let settings = config
+                .entry("settings".to_owned())
+                .or_insert_with(|| Value::Object(Map::new()));
+            let settings = settings.as_object_mut().ok_or_else(|| {
+                InstallError::Setup(format!("OpenCode provider {id} settings must be an object"))
+            })?;
+            for (key, value) in options {
+                settings.entry(key.clone()).or_insert_with(|| value.clone());
+            }
+        }
+        let migrated_config = config.clone();
+        let current = providers
+            .entry(id.clone())
+            .or_insert_with(|| Value::Object(Map::new()));
+        let current = current.as_object_mut().ok_or_else(|| {
+            InstallError::Setup(format!(
+                "OpenCode provider {id} configuration must be an object"
+            ))
+        })?;
+        merge_provider_defaults(current, &migrated_config);
+    }
+    Ok(())
+}
+
+fn merge_provider_defaults(target: &mut Map<String, Value>, defaults: &Map<String, Value>) {
+    for (key, value) in defaults {
+        if key == "settings" {
+            if let (Some(target_settings), Some(default_settings)) = (
+                target.get_mut(key).and_then(Value::as_object_mut),
+                value.as_object(),
+            ) {
+                for (setting, default) in default_settings {
+                    target_settings
+                        .entry(setting.clone())
+                        .or_insert_with(|| default.clone());
+                }
+                continue;
+            }
+        }
+        target.entry(key.clone()).or_insert_with(|| value.clone());
+    }
+}
+
+fn set_provider_setting(
+    object: &mut Map<String, Value>,
+    provider_id: &str,
+    setting_name: &str,
+    setting_value: String,
+) -> Result<()> {
+    let providers = object
+        .entry("providers".to_owned())
+        .or_insert_with(|| Value::Object(Map::new()));
+    let providers = providers.as_object_mut().ok_or_else(|| {
+        InstallError::Setup("OpenCode providers configuration must be an object".into())
+    })?;
+    let provider = providers
+        .entry(provider_id.to_owned())
+        .or_insert_with(|| Value::Object(Map::new()));
+    let provider = provider.as_object_mut().ok_or_else(|| {
+        InstallError::Setup(format!(
+            "OpenCode provider {provider_id} configuration must be an object"
+        ))
+    })?;
+    let settings = provider
+        .entry("settings".to_owned())
+        .or_insert_with(|| Value::Object(Map::new()));
+    let settings = settings.as_object_mut().ok_or_else(|| {
+        InstallError::Setup(format!(
+            "OpenCode provider {provider_id} settings must be an object"
+        ))
+    })?;
+    settings.insert(setting_name.to_owned(), Value::String(setting_value));
     Ok(())
 }
 

@@ -157,10 +157,12 @@ and do not create the shell profile.
 ### OpenCode
 
 OpenCode is an opt-in cross-platform module. Select it interactively or use
-`--modules opencode`. The binary embeds `secrets/opencode.env.age` and decrypts
-it in memory when an age identity is available. Provider values are written to
-protected user-local credential files and referenced from OpenCode configuration
-with `{file:...}` values; secret values are never written to the JSON config.
+`--modules opencode`. The module writes an OpenCode v2 config with the
+[`https://opencode.ai/config.json`](https://opencode.ai/config.json) JSON Schema
+reference. The binary embeds `secrets/opencode.env.age` and decrypts it in memory
+when an age identity is available. Provider values are written to protected
+user-local credential files and referenced from OpenCode configuration with
+`{file:...}` values; secret values are never written to the JSON config.
 
 The expected provider variables are `OPENROUTER_API_KEY`, `AZURE_API_KEY`,
 `AZURE_RESOURCE_NAME`, and `DIGITALOCEAN_ACCESS_TOKEN`. Provider setup is

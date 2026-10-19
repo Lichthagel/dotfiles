@@ -86,7 +86,7 @@ fn platform_filtering_excludes_shell_specific_modules() {
 }
 
 #[test]
-fn defaults_and_descriptions_match_current_modules() {
+fn default_selections_and_descriptions_match_current_modules() {
     for module in ["git", "bash", "zsh", "powershell", "mise"] {
         assert!(registry::find_module(module).unwrap().default_selected);
     }

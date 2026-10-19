@@ -4,7 +4,7 @@
 
 **Goal:** Replace the single package/setup pass with dependency-ordered module phases so provider modules such as `mise` install and configure before packages that need them.
 
-**Architecture:** Add generic `provides=<manager>` and module-scope `requires=<module[,module...]>` metadata to both restricted parsers. Resolve provider modules from package declarations before package planning, topologically order provider and explicit module dependencies, and execute each phase as package plan, package install, setup, and mapping. Keep provider additions internal to the selected module set and remove the installer-specific `mise_required`/`install_mise` bootstrap path.
+**Architecture:** Add generic `provides=<manager>` and module-scope `requires=<module[,module...]>` metadata to both restricted parsers. Only resolve modules explicitly selected by the user; require provider modules and declared module dependencies to be selected as well. Allow already available managers regardless of provider selection; require selection only to install or configure a manager. Execute selected modules in dependency order, with each phase handling package plan, package install, setup, and mapping.
 
 **Tech Stack:** Bash, PowerShell 7+, restricted `key=value` module manifests, existing shell installer test scripts.
 
@@ -14,7 +14,7 @@
 
 - Preserve platform-qualified `map=`, `package=`, `secret=`, and `setup=` entries.
 - Module configuration is parsed as restricted data and must not be sourced or executed.
-- Provider dependencies are soft additions inferred from package-manager declarations; consumers must not explicitly list `requires=mise`.
+- Package-manager declarations identify providers, but providers are never implicit additions; the user must select a provider module to install or configure that manager. Already available managers remain usable.
 - A provider module must not install itself through the manager it provides.
 - Existing `--yes`/`-Yes`, interactive package selection, backups, and noninteractive error behavior remain intact.
 - Do not add Atuin-specific logic to either installer.
@@ -67,12 +67,12 @@ Run `git diff --check` and verify that existing map/package/setup parsing is unc
 
 **Interfaces:**
 - Bash resolver returns an ordered internal module list and phase boundaries without changing the user’s explicit `requested_apps`.
-- PowerShell resolver returns ordered phase objects containing module names and whether each module was explicitly selected or implicitly added.
+- PowerShell resolver returns ordered phases containing only explicitly selected module names.
 - Provider resolution maps a package manager token to the unique module declaring `provides=<manager>`.
 
 - [ ] **Step 1: Write failing provider-order tests**
 
-Create a test scenario where `git` is selected, `mise` is unavailable, and the only usable package path for a dependent package is `mise`. Assert that the internal `mise` provider is added, that it precedes the dependent module, and that a provider package is not planned through `mise` itself. Add a cycle/duplicate-provider manifest assertion and a missing-provider error assertion.
+Create a test scenario where a module needs `mise` but the `mise` provider is not selected. Assert that resolution asks the user to select `mise`; when both modules are selected, assert that the provider precedes the dependent module and is not planned through itself. Add a cycle/duplicate-provider manifest assertion.
 
 - [ ] **Step 2: Run tests to verify failure**
 
@@ -82,11 +82,11 @@ Expected: FAIL because no provider graph or ordered phase resolver exists.
 
 - [ ] **Step 3: Implement provider discovery**
 
-Before package-manager availability errors, scan package declarations for the current module set. If a declaration names an unavailable manager and a module provides that manager, add the provider module internally. If multiple modules provide the same manager, fail with both module names. If no provider exists, retain the existing no-manager error.
+Before package-manager availability errors, scan package declarations for the current module set. Use already available managers even if their provider modules are unselected. If no other manager is available, report which provider module the user must select; never add it internally.
 
 - [ ] **Step 4: Implement explicit dependency expansion and topological ordering**
 
-Expand module-scope `requires` entries, validate referenced modules, detect cycles with a clear path, and topologically order provider modules and explicit dependencies before their consumers. Preserve manifest order as the deterministic tie-breaker for unrelated modules.
+Validate that every module-scope `requires` entry names a selected module, detect cycles with a clear path, and topologically order selected provider modules and explicit dependencies before their consumers. Preserve manifest order as the deterministic tie-breaker for unrelated modules.
 
 - [ ] **Step 5: Prevent provider self-install**
 
@@ -112,7 +112,7 @@ Run both package test scripts and confirm provider order, duplicate-provider, mi
 
 - [ ] **Step 1: Write failing Bash phase-order integration test**
 
-Extend the fake-manager test harness so installing the `mise` provider creates a fake `mise` executable. Select a dependent module whose package can then be installed through `mise`, record command order, and assert the provider package/setup/mapping occurs before the dependent package/setup/mapping.
+Extend the fake-manager test harness so selecting and installing the `mise` provider creates a fake `mise` executable. Explicitly select a dependent module whose package can then be installed through `mise`, record command order, and assert the provider package/setup/mapping occurs before the dependent package/setup/mapping.
 
 - [ ] **Step 2: Run the Bash integration test to verify failure**
 
@@ -151,7 +151,7 @@ Run `bash -n install.sh`, `bash tests/test-install.sh`, `bash tests/test-package
 
 - [ ] **Step 1: Write failing PowerShell phase-order assertions**
 
-Add parser/integration assertions for implicit provider addition, provider-before-consumer ordering, provider self-install avoidance, and dependency cycle errors. Use the existing static parser tests for manifest errors and a temporary fake-command PATH to record executable order for the provider-before-consumer scenario.
+Add parser/integration assertions that an unselected provider is required, explicitly selected providers run before consumers, provider self-install is avoided, and dependency cycles fail. Use the existing static parser tests for manifest errors and a temporary fake-command PATH to record executable order.
 
 - [ ] **Step 2: Run PowerShell tests to verify failure**
 
@@ -181,7 +181,7 @@ Run `pwsh -NoProfile -File .\tests\test-install.ps1` and `pwsh -NoProfile -File 
 
 - [ ] **Step 1: Add final behavior assertions**
 
-Verify that default selection does not add a provider unless a selected package needs it, implicit providers are absent from explicit validation output, provider mappings are guarded by shell-module requirements, and existing backup behavior remains intact.
+Verify configured module defaults remain preselected, already available managers remain candidates without applying or recording their unselected providers, selected providers run before consumers, provider mappings are guarded by shell-module requirements, and existing backup behavior remains intact.
 
 - [ ] **Step 2: Run the complete test matrix**
 

@@ -34,6 +34,7 @@ static TEST_CONSUMER_PACKAGES: &[Package] = &[Package {
     }],
 }];
 static TEST_NO_MAPPINGS: &[MappingSpec] = &[];
+static TEST_NO_PACKAGES: &[Package] = &[];
 static UNAVAILABLE_GIT_PACKAGES: &[Package] = &[Package {
     id: "git",
     command: Some("git"),
@@ -69,6 +70,21 @@ static TEST_CONSUMER: ModuleSpec = ModuleSpec {
     secret_bundle: None,
 };
 static TEST_MODULES: &[ModuleSpec] = &[TEST_PROVIDER, TEST_CONSUMER];
+static TEST_HARD_DEPENDENCY_IDS: &[&str] = &["test-mise-provider"];
+static TEST_HARD_DEPENDENT: ModuleSpec = ModuleSpec {
+    id: "test-hard-dependent",
+    description: "test hard dependent",
+    platforms: &[Platform::Linux],
+    default_selected: false,
+    provides: None,
+    requires: TEST_HARD_DEPENDENCY_IDS,
+    packages: TEST_NO_PACKAGES,
+    mappings: TEST_NO_MAPPINGS,
+    setup: None,
+    secret_request: None,
+    secret_bundle: None,
+};
+static TEST_HARD_DEPENDENCY_MODULES: &[ModuleSpec] = &[TEST_PROVIDER, TEST_HARD_DEPENDENT];
 
 fn count_files(root: &std::path::Path) -> usize {
     let Ok(entries) = fs::read_dir(root) else {
@@ -187,7 +203,7 @@ fn existing_commands_do_not_resolve_package_manager_providers() {
 fn package_ids_are_not_used_as_commands_during_provider_resolution() {
     let runner = FakeRunner::available(["consumer-package"]);
     let resolved = resolve_modules_from_registry(
-        &["test-mise-consumer".into()],
+        &["test-mise-provider".into(), "test-mise-consumer".into()],
         Platform::Linux,
         &runner,
         TEST_MODULES,
@@ -200,7 +216,7 @@ fn package_ids_are_not_used_as_commands_during_provider_resolution() {
 }
 
 #[test]
-fn packages_without_commands_still_resolve_providers() {
+fn packages_without_commands_still_use_explicitly_selected_providers() {
     let modules = [
         TEST_PROVIDER,
         ModuleSpec {
@@ -217,7 +233,7 @@ fn packages_without_commands_still_resolve_providers() {
     ];
     let runner = FakeRunner::available(["consumer-package", "consumer"]);
     let resolved = resolve_modules_from_registry(
-        &["test-mise-consumer".into()],
+        &["test-mise-provider".into(), "test-mise-consumer".into()],
         Platform::Linux,
         &runner,
         &modules,
@@ -226,6 +242,69 @@ fn packages_without_commands_still_resolve_providers() {
     assert_eq!(
         resolved.iter().map(|module| module.id).collect::<Vec<_>>(),
         ["test-mise-provider", "test-mise-consumer"]
+    );
+}
+
+#[test]
+fn missing_managers_require_explicit_provider_selection() {
+    let runner = FakeRunner::available(std::iter::empty::<&str>());
+    let error = resolve_modules_from_registry(
+        &["test-mise-consumer".into()],
+        Platform::Linux,
+        &runner,
+        TEST_MODULES,
+    )
+    .unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("test-mise-provider"));
+    assert!(message.contains("explicitly select"));
+}
+
+#[test]
+fn available_managers_do_not_apply_or_record_unselected_provider_modules() {
+    let runner = FakeRunner::available(["mise"]);
+    let mut fixture = InstallFixture::new(Platform::Linux);
+    install_with_registry(
+        InstallRequest::explicit(["test-mise-consumer"], true, Platform::Linux),
+        test_context(&mut fixture, &runner),
+        TEST_MODULES,
+    )
+    .unwrap();
+
+    assert!(runner
+        .calls()
+        .iter()
+        .any(|call| { call.program == "mise" && call.args == ["use", "--global", "consumer"] }));
+    let state = ModuleState::load(&fixture.ops.state_path().unwrap()).unwrap();
+    assert!(state.contains("test-mise-consumer"));
+    assert!(!state.contains("test-mise-provider"));
+    assert_eq!(runner.refresh_count(), 1);
+    assert!(runner.package_log().is_empty());
+}
+
+#[test]
+fn hard_module_dependencies_must_be_explicitly_selected() {
+    let runner = FakeRunner::available(std::iter::empty::<&str>());
+    let error = resolve_modules_from_registry(
+        &["test-hard-dependent".into()],
+        Platform::Linux,
+        &runner,
+        TEST_HARD_DEPENDENCY_MODULES,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("test-mise-provider"));
+    assert!(error.to_string().contains("explicitly select"));
+
+    let resolved = resolve_modules_from_registry(
+        &["test-mise-provider".into(), "test-hard-dependent".into()],
+        Platform::Linux,
+        &runner,
+        TEST_HARD_DEPENDENCY_MODULES,
+    )
+    .unwrap();
+    assert_eq!(
+        resolved.iter().map(|module| module.id).collect::<Vec<_>>(),
+        ["test-mise-provider", "test-hard-dependent"]
     );
 }
 
@@ -595,7 +674,11 @@ fn refresh_makes_provider_available_to_dependent_phase() {
         FakeRunner::available(["apt", "dpkg-query", "run0", "apt-get"]).refresh_adds("mise");
     let mut fixture = InstallFixture::new(Platform::Linux);
     install_with_registry(
-        InstallRequest::explicit(["test-mise-consumer"], true, Platform::Linux),
+        InstallRequest::explicit(
+            ["test-mise-provider", "test-mise-consumer"],
+            true,
+            Platform::Linux,
+        ),
         test_context(&mut fixture, &runner),
         TEST_MODULES,
     )

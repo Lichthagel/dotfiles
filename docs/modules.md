@@ -6,8 +6,12 @@ configuration/profile assets, and any module-specific setup live in
 [`src/registry.rs`](../src/registry.rs) remains authoritative. Atuin and
 OpenCode also embed their encrypted secret bundles beside their module
 specifications; the source bundles remain under `secrets/`.
-Default selections apply to the interactive checklist on supported platforms;
-explicit `--modules` selection installs only the requested modules.
+The interactive checklist preselects the defaults shown below. Press Enter to
+approve that selection; use Space to change it. Previously applied state does
+not affect the defaults. Provider modules must be selected explicitly when
+to install or configure a manager; the installer never adds modules to the
+selection implicitly. Already available managers can be used without selecting
+their provider module.
 
 | Module | Platforms | Selected by default | Purpose |
 | --- | --- | --- | --- |
@@ -35,8 +39,9 @@ cargo run -- --modules git,powershell,mise --yes
 ```
 
 `--apps` is a compatibility alias for `--modules`. `--yes` accepts the package
-plan without prompting; unattended setup still requires explicit module
-selection. Use `--list` to list modules supported by the current binary.
+plan without prompting; it does not authorize additional modules. Unattended
+setup still requires explicit module selection. Use `--list` to list modules
+supported by the current binary.
 
 Each module declares packages as a `Package` with a stable `id`, an optional
 `command`, and nested `PackageSource` alternatives (`manager` and package `name`).
@@ -47,12 +52,16 @@ example, Git declares ID `git`, command `Some("git")`, and a Winget source named
 combined.
 
 Package installation is skipped when the explicitly declared command is already
-in `PATH`. This check happens before package-manager queries or automatic
-provider selection, so tools installed outside a package manager do not require
-one. If the command is absent, or `command` is `None`, package-manager records
-are still checked to avoid reinstalling an existing package. Source availability
-and manager priority remain platform-specific. Skipping a package does not skip
-the module's setup, configuration mappings, or applied-state update.
+in `PATH`. This check happens before package-manager queries and provider
+requirements, so tools installed outside a package manager do not require one.
+If the command is absent, or `command` is `None`, package-manager records are
+still checked to avoid reinstalling an existing package. Source availability and
+manager priority remain platform-specific. Skipping a package does not skip the
+module's setup, configuration mappings, or applied-state update. Already
+available managers are offered regardless of provider module selection. If no
+declared manager is available, select a provider module to install one (for
+example, `brew` for Homebrew); otherwise installation stops with the provider
+IDs to select. `--yes` does not bypass this requirement.
 
 Shell integration requires the corresponding shell module to be selected in
 this run or recorded as previously applied: `bash` or `zsh` on Linux, and
@@ -80,9 +89,11 @@ setup.
 
 After each module's setup and file mappings succeed, the installer records its
 ID in a local JSON file. Completed modules remain recorded if a later module
-fails. The interactive checklist labels these modules as `previously applied`;
-this does not change default selections or prevent explicitly selected modules
-from running again. Previously applied modules also satisfy mapping requirements
+fails. The interactive checklist labels these modules as `previously applied`,
+but that status does not change default selections or prevent explicitly
+selected modules from running again. Discovering or using a manager does not
+mark its provider module as previously applied: only successful module setup
+and mappings do that. Previously applied modules also satisfy mapping requirements
 for selected modules, such as mise's shell activation, without being rerun.
 
 The state file lives beside the backup directory:

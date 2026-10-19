@@ -115,7 +115,7 @@ fn duplicate_unknown_and_unsupported_modules_are_rejected() {
 }
 
 #[test]
-fn default_module_selection_and_enter_confirm_selected_defaults() {
+fn module_selection_starts_with_configured_defaults_and_supports_toggles() {
     let modules = registry::modules()
         .iter()
         .filter(|module| module.supports(Platform::Linux))
@@ -123,17 +123,31 @@ fn default_module_selection_and_enter_confirm_selected_defaults() {
     let mut terminal = FakeTerminal::interactive([TerminalKey::Enter]);
     let selected = select_modules(&modules, &mut terminal).unwrap();
     assert_eq!(selected, ["git", "bash", "zsh", "mise"]);
-    assert!(terminal.output.contains("git - Git configuration"));
+    assert!(terminal.output.contains("[x] git - Git configuration"));
     assert_eq!(terminal.menu_styles.first(), Some(&MenuStyle::Heading));
     assert_eq!(terminal.menu_styles.get(1), Some(&MenuStyle::Pointer));
     assert_eq!(
         terminal.menu_styles.get(2),
         Some(&MenuStyle::FocusedSelected)
     );
+
+    let mut terminal = FakeTerminal::interactive([
+        TerminalKey::Down,
+        TerminalKey::Down,
+        TerminalKey::Down,
+        TerminalKey::Down,
+        TerminalKey::Space,
+        TerminalKey::Enter,
+    ]);
+    let selected = select_modules(&modules, &mut terminal).unwrap();
+    assert_eq!(selected, ["git", "bash", "zsh", "mise", "brew"]);
+    assert!(terminal
+        .output
+        .contains("[x] brew - Homebrew package manager"));
 }
 
 #[test]
-fn previously_applied_modules_are_labeled_without_changing_selection_defaults() {
+fn previously_applied_modules_are_labeled_without_changing_defaults() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("state.json");
     std::fs::write(

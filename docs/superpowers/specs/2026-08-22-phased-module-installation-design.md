@@ -2,23 +2,23 @@
 
 ## Goal
 
-Allow a selected module to provide a package manager that is needed by other selected modules. The provider module is a soft dependency: it is added to the installation plan when needed, runs first, and is not required in the user's explicit module list. The first provider is `mise`; the mechanism must support additional provider modules later.
+Allow an explicitly selected module to provide a package manager needed by other explicitly selected modules. Provider modules are never added to the installation plan implicitly: when one is needed, the user must select it in the module checklist or include it in the explicit module list. Selected providers run before their consumers. The first provider is `mise`; the mechanism must support additional provider modules later.
 
 ## Module Metadata
 
 Modules may declare `provides=<manager>` to identify a package manager they install and configure. The `mise` module will declare `provides=mise`.
 
-Package declarations already identify their manager (`package=<logical>|<manager>:<name>`). A selected package that resolves to a manager with a matching provider implicitly requires that provider module. Consumer modules must not add `requires=mise` solely for package installation.
+Package declarations already identify their manager (`package=<logical>|<manager>:<name>`). A selected package that resolves to a manager with a matching provider requires that provider to be explicitly selected. Consumer modules must not add `requires=mise` solely for package installation.
 
-Explicit module dependencies use `requires=<module[,module...]>` at module scope and are hard ordering requirements for future modules. They are distinct from a provider dependency: provider dependencies are inferred from package declarations and are soft additions to the selected set.
+Explicit module dependencies use `requires=<module[,module...]>` at module scope and are hard ordering requirements for future modules. Both those dependencies and package-manager providers must be explicitly selected; neither is silently added to the selected set.
 
 ## Resolution And Phases
 
 1. Parse the manifest and module metadata, including `provides`.
 2. Start with the modules explicitly selected by the user.
-3. Inspect package declarations for the current module set before selecting managers. If a package has a declaration for an unavailable manager with a matching provider module, add that provider to the module set if it is not already present. This inference happens before reporting that the package has no available manager.
-4. Resolve provider modules before their consumers using a dependency graph. A provider's own package must not be assigned to the manager it provides; its declarations must include a bootstrap-capable manager such as `apt`, `dnf`, `pacman`, `brew`, `winget`, or `scoop`.
-5. After each provider phase makes a manager available, rebuild candidates for remaining modules and add any newly discovered providers.
+3. Inspect package declarations for the current module set before selecting managers. If a package needs an unavailable manager with a matching provider that was not selected, stop with an error naming the provider modules that the user can select.
+4. Resolve explicitly selected provider modules before their consumers using a dependency graph. A provider's own package must not be assigned to the manager it provides; its declarations must include a bootstrap-capable manager such as `apt`, `dnf`, `pacman`, `brew`, `winget`, or `scoop`.
+5. After each selected provider phase makes a manager available, rebuild candidates for remaining selected modules. Do not infer or add additional provider modules. Already available managers remain usable without selecting their provider modules.
 6. For each phase in dependency order:
    - Build the package plan for modules in that phase.
    - Apply the existing interactive package selection and confirmation behavior.
@@ -31,9 +31,7 @@ The provider module is considered processed after its package, setup, and mappin
 
 ## Selection Semantics
 
-Explicit `--apps`/`-Apps` remains the source of user-selected modules. Soft provider modules are internal additions and do not change explicit-module validation or interactive module selection semantics. The provider may still appear in package and setup output so users can understand what is being installed.
-
-Default interactive selections are resolved after the initial checklist and before package planning. A default provider is not installed merely because it is default; it is installed when selected explicitly or inferred as a provider for a selected package.
+Explicit `--modules`/`--apps` remains the source of user-selected modules. The interactive checklist preselects each module's configured default, but providers or declared module dependencies are never internal additions. An already available package manager can be used without selecting its provider module; only installing or configuring a manager requires module selection. Manager availability does not mark a provider module as previously applied. If a selected module needs an unselected provider or hard dependency, the installer stops and asks the user to select it explicitly. `--yes` skips package-plan confirmation only; it does not approve extra modules.
 
 ## Compatibility And Errors
 
@@ -47,8 +45,8 @@ Default interactive selections are resolved after the initial checklist and befo
 
 Add coverage for both installers that verifies:
 
-- A selected module using `mise` implicitly adds the `mise` provider.
-- The provider is installed through a system manager before dependent packages.
+- A selected module needing unavailable `mise` reports that the `mise` provider must be selected. Available `mise` can be used without applying or recording its provider module.
+- When both consumer and provider are selected, the provider is installed through a system manager before dependent packages.
 - A later phase can use the newly installed provider.
 - Provider setup and mappings run before dependent module setup and mappings.
 - Provider self-install through its own manager is rejected or avoided.

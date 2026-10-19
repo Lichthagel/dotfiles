@@ -132,6 +132,25 @@ fn linux_prefers_apt_and_run0_over_other_managers() {
 }
 
 #[test]
+fn available_provider_managers_are_candidates_without_module_selection() {
+    let module = test_module(&[Package {
+        id: "brew-only-tool",
+        command: Some("brew-only-tool"),
+        sources: &[PackageSource {
+            manager: PackageManager::Brew,
+            name: "brew-only-tool",
+        }],
+    }]);
+    let runner = FakeRunner::available(["brew"]);
+    let plan = build_package_plan(&runner, Platform::Linux, &[&module], true).unwrap();
+    assert_eq!(plan.alternatives["brew-only-tool"].len(), 1);
+    assert_eq!(
+        plan.alternatives["brew-only-tool"][0].manager,
+        PackageManager::Brew
+    );
+}
+
+#[test]
 fn linux_falls_back_to_sudo_when_run0_is_unavailable() {
     let runner = FakeRunner::available(["apt", "sudo"]);
     install_package(

@@ -35,17 +35,24 @@ struct Resolver<'a, 'r> {
     platform: Platform,
     runner: &'r dyn CommandRunner,
     modules: &'a [ModuleSpec],
+    selected: BTreeSet<String>,
     states: BTreeMap<String, VisitState>,
     stack: Vec<String>,
     ordered: Vec<&'a ModuleSpec>,
 }
 
 impl<'a, 'r> Resolver<'a, 'r> {
-    fn new(platform: Platform, runner: &'r dyn CommandRunner, modules: &'a [ModuleSpec]) -> Self {
+    fn new(
+        platform: Platform,
+        runner: &'r dyn CommandRunner,
+        modules: &'a [ModuleSpec],
+        selected: &[String],
+    ) -> Self {
         Self {
             platform,
             runner,
             modules,
+            selected: selected.iter().cloned().collect(),
             states: BTreeMap::new(),
             stack: Vec::new(),
             ordered: Vec::new(),
@@ -83,6 +90,21 @@ impl<'a, 'r> Resolver<'a, 'r> {
         self.stack.push(id.to_owned());
 
         for dependency in module.requires.iter().copied() {
+            if !self
+                .modules
+                .iter()
+                .any(|candidate| candidate.id == dependency)
+            {
+                return Err(InstallError::Usage(format!(
+                    "unknown module dependency: {dependency}"
+                )));
+            }
+            if !self.selected.iter().any(|selected| selected == dependency) {
+                return Err(InstallError::Usage(format!(
+                    "module {} requires module {dependency}; explicitly select it in the module checklist or with --modules",
+                    module.id
+                )));
+            }
             self.resolve(dependency)?;
         }
 
@@ -102,14 +124,34 @@ impl<'a, 'r> Resolver<'a, 'r> {
             }) {
                 continue;
             }
-            for source in sources {
-                let provider = self.modules.iter().find(|candidate| {
-                    candidate.provides == Some(source.manager) && candidate.supports(self.platform)
-                });
-                if let Some(provider) = provider {
-                    self.resolve(provider.id)?;
-                    break;
+            let providers = sources
+                .filter_map(|source| {
+                    self.modules
+                        .iter()
+                        .find(|candidate| {
+                            candidate.provides == Some(source.manager)
+                                && candidate.supports(self.platform)
+                        })
+                        .map(|provider| (source.manager, provider))
+                })
+                .collect::<Vec<_>>();
+            if let Some((_, provider)) = providers
+                .iter()
+                .find(|(_, provider)| self.selected.iter().any(|selected| selected == provider.id))
+            {
+                self.resolve(provider.id)?;
+            } else if !providers.is_empty() {
+                let mut provider_ids = Vec::new();
+                for (_, provider) in &providers {
+                    if !provider_ids.contains(&provider.id) {
+                        provider_ids.push(provider.id);
+                    }
                 }
+                return Err(InstallError::Usage(format!(
+                    "module {} needs a package manager provided by this installer; explicitly select one of its provider modules ({}) in the module checklist or with --modules",
+                    module.id,
+                    provider_ids.join(", ")
+                )));
             }
         }
 
@@ -135,7 +177,7 @@ pub fn resolve_modules_from_registry<'a>(
     modules: &'a [ModuleSpec],
 ) -> Result<Vec<&'a ModuleSpec>> {
     crate::cli::validate_modules_against(selected, platform, modules)?;
-    let mut resolver = Resolver::new(platform, runner, modules);
+    let mut resolver = Resolver::new(platform, runner, modules, selected);
     for id in selected {
         resolver.resolve(id)?;
     }

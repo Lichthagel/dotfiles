@@ -57,10 +57,15 @@ cargo run -- --modules git,powershell --yes
 - `--list` lists modules supported by the current binary.
 - `--help` prints usage.
 
-Without `--modules`/`--apps`, the binary opens the interactive module checklist.
-Explicit module selection is required for unattended setup. The checklist marks
-previously applied modules using a local state file; selected modules still run
-again. See [applied module state](docs/modules.md#applied-module-state) for paths
+Without `--modules`/`--apps`, the binary opens the interactive module checklist
+with the platform's defaults preselected. Review the checklist and press Enter
+to approve that selection; toggle modules with Space. Provider modules such as
+`brew` and `scoop` start unchecked and are never added implicitly. Already
+available package managers can be used without selecting their provider module.
+Installing or configuring a missing manager requires selecting its module. `--yes` skips package-plan confirmation only; it
+does not approve additional modules. The checklist marks previously applied
+modules using a local state file, but that status does not change defaults or
+prevent explicitly selected modules from running again. See [applied module state](docs/modules.md#applied-module-state) for paths
 and behavior.
 
 A package is skipped when its explicitly declared `command` is already in
@@ -97,13 +102,16 @@ the `production` Actions environment; configure `CLOUDFLARE_ACCOUNT_ID`,
 protection rules can gate deployments.
 
 See the [module reference](docs/modules.md) for a table of supported modules,
-platforms, and default selections.
+platforms, and selection behavior.
 
 The current modules are `git`, `bash`, `zsh`, `powershell`, `mise`, `brew`,
-`scoop`, `atuin`, `oh-my-posh`, and `opencode`. `atuin`, `oh-my-posh`, and
-`opencode` are opt-in. Existing targets are moved into timestamped backup
-directories before updates. Bash, Zsh, and PowerShell profiles update only their
-border-commented managed sections, preserving any text outside those sections.
+`scoop`, `atuin`, `oh-my-posh`, and `opencode`. `brew`, `scoop`, `atuin`,
+`oh-my-posh`, and `opencode` start unchecked. On Linux, `git`, `bash`, `zsh`,
+and `mise` start selected; on Windows, `git`, `powershell`, and `mise` start
+selected. Existing targets are moved into
+timestamped backup directories before updates. Bash, Zsh, and PowerShell
+profiles update only their border-commented managed sections, preserving any
+text outside those sections.
 Other embedded mappings are materialized as regular files, so they do not depend
 on the temporary binary or a source checkout.
 

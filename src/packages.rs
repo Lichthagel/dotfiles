@@ -161,6 +161,14 @@ fn listed_exact_name(stdout: &[u8], package_name: &str) -> bool {
         .any(|line| line.split_whitespace().next() == Some(package_name))
 }
 
+fn run0_transient_service_denied(output: &CommandOutput) -> bool {
+    [&output.stdout, &output.stderr].iter().any(|stream| {
+        String::from_utf8_lossy(stream)
+            .to_ascii_lowercase()
+            .contains("failed to start transient service unit")
+    })
+}
+
 fn package_not_found(manager: PackageManager, output: &CommandOutput) -> bool {
     let detail = format!(
         "{} {}",
@@ -284,12 +292,25 @@ impl PackageManagerAdapter {
             .iter()
             .map(|argument| (*argument).to_owned())
             .collect::<Vec<_>>();
-        runner.run(privilege, &args, &[], None).map_err(|error| {
+        let output = runner.run(privilege, &args, &[], None).map_err(|error| {
             InstallError::Package(format!(
                 "{} {operation} could not run: {error}",
                 self.manager.label()
             ))
-        })
+        })?;
+        if privilege == "run0"
+            && output.status != 0
+            && runner.available("sudo")
+            && run0_transient_service_denied(&output)
+        {
+            return runner.run("sudo", &args, &[], None).map_err(|error| {
+                InstallError::Package(format!(
+                    "{} {operation} could not run: {error}",
+                    self.manager.label()
+                ))
+            });
+        }
+        Ok(output)
     }
 
     fn run_privileged_success(
@@ -312,6 +333,20 @@ impl PackageManagerAdapter {
                 format!(": {detail}")
             }
         )))
+    }
+
+    fn install_privileged_package(
+        self,
+        runner: &dyn CommandRunner,
+        args: &[&str],
+        package_name: &str,
+    ) -> Result<()> {
+        let output = self.run_privileged(runner, args, "install package")?;
+        if output.status == 0 {
+            Ok(())
+        } else {
+            Err(installation_failure(self.manager, package_name, output))
+        }
     }
 
     fn install_apt_mise(self, runner: &dyn CommandRunner) -> Result<()> {
@@ -504,64 +539,24 @@ impl ManagerAdapter for PackageManagerAdapter {
         }
         let (program, args): (String, Vec<String>) = match self.manager {
             PackageManager::Apt => {
-                let privilege = if runner.available("run0") {
-                    "run0"
-                } else if runner.available("sudo") {
-                    "sudo"
-                } else {
-                    return Err(InstallError::Package(
-                        "apt requires run0 or sudo for package installation".into(),
-                    ));
-                };
-                (
-                    privilege.to_owned(),
-                    vec![
-                        "apt-get".into(),
-                        "install".into(),
-                        "-y".into(),
-                        package_name.into(),
-                    ],
+                return self.install_privileged_package(
+                    runner,
+                    &["apt-get", "install", "-y", package_name],
+                    package_name,
                 )
             }
             PackageManager::Dnf => {
-                let privilege = if runner.available("run0") {
-                    "run0"
-                } else if runner.available("sudo") {
-                    "sudo"
-                } else {
-                    return Err(InstallError::Package(
-                        "dnf requires run0 or sudo for package installation".into(),
-                    ));
-                };
-                (
-                    privilege.to_owned(),
-                    vec![
-                        "dnf".into(),
-                        "install".into(),
-                        "-y".into(),
-                        package_name.into(),
-                    ],
+                return self.install_privileged_package(
+                    runner,
+                    &["dnf", "install", "-y", package_name],
+                    package_name,
                 )
             }
             PackageManager::Pacman => {
-                let privilege = if runner.available("run0") {
-                    "run0"
-                } else if runner.available("sudo") {
-                    "sudo"
-                } else {
-                    return Err(InstallError::Package(
-                        "pacman requires run0 or sudo for package installation".into(),
-                    ));
-                };
-                (
-                    privilege.to_owned(),
-                    vec![
-                        "pacman".into(),
-                        "-S".into(),
-                        "--needed".into(),
-                        "--noconfirm".into(),
-                        package_name.into(),
-                    ],
+                return self.install_privileged_package(
+                    runner,
+                    &["pacman", "-S", "--needed", "--noconfirm", package_name],
+                    package_name,
                 )
             }
             PackageManager::Brew => ("brew".into(), vec!["install".into(), package_name.into()]),

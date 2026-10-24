@@ -6,6 +6,52 @@ use dotfiles::registry::{find_module, ModuleSpec, Package, PackageSource};
 use std::sync::Mutex;
 use support::runner::FakeRunner;
 
+struct Run0FallbackRunner {
+    run0_stderr: String,
+    calls: Mutex<Vec<(String, Vec<String>)>>,
+}
+
+impl Run0FallbackRunner {
+    fn new(run0_stderr: &str) -> Self {
+        Self {
+            run0_stderr: run0_stderr.to_owned(),
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn calls(&self) -> Vec<(String, Vec<String>)> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+impl CommandRunner for Run0FallbackRunner {
+    fn available(&self, program: &str) -> bool {
+        matches!(program, "dnf" | "run0" | "sudo")
+    }
+
+    fn run(
+        &self,
+        program: &str,
+        args: &[String],
+        _env: &[(String, String)],
+        _stdin: Option<&[u8]>,
+    ) -> dotfiles::error::Result<dotfiles::packages::CommandOutput> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((program.to_owned(), args.to_vec()));
+        Ok(dotfiles::packages::CommandOutput {
+            status: i32::from(program == "run0"),
+            stdout: Vec::new(),
+            stderr: if program == "run0" {
+                self.run0_stderr.as_bytes().to_vec()
+            } else {
+                Vec::new()
+            },
+        })
+    }
+}
+
 struct RepositoryRunner {
     calls: Mutex<Vec<(String, Vec<String>)>>,
     rhel_release: Option<String>,
@@ -224,6 +270,38 @@ fn linux_falls_back_to_sudo_when_run0_is_unavailable() {
     .unwrap();
     assert_eq!(runner.last_program(), "sudo");
     assert_eq!(runner.last_args(), ["apt-get", "install", "-y", "git"]);
+}
+
+#[test]
+fn run0_transient_service_denial_retries_the_package_command_with_sudo() {
+    let runner = Run0FallbackRunner::new("Failed to start transient service unit: Access denied");
+    install_package(
+        &runner,
+        Platform::Linux,
+        &action(PackageManager::Dnf, "git"),
+    )
+    .unwrap();
+
+    let calls = runner.calls();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0].0, "run0");
+    assert_eq!(calls[1].0, "sudo");
+    assert_eq!(calls[1].1, ["dnf", "install", "-y", "git"]);
+}
+
+#[test]
+fn run0_package_errors_do_not_retry_with_sudo() {
+    let runner = Run0FallbackRunner::new("transaction failed");
+    let error = install_package(
+        &runner,
+        Platform::Linux,
+        &action(PackageManager::Dnf, "git"),
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("transaction failed"));
+    assert_eq!(runner.calls().len(), 1);
+    assert_eq!(runner.calls()[0].0, "run0");
 }
 
 #[test]

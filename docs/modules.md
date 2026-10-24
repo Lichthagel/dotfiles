@@ -17,5 +17,8 @@ configuration and setup live in [`src/modules/`](../src/modules/).
 | `oh-my-posh` | Linux, Windows | No | [Oh My Posh](modules/oh-my-posh.md) |
 | `opencode` | Linux, Windows | No | [OpenCode](modules/opencode.md) |
 
+Atuin setup decrypts its embedded credentials in memory and uses non-interactive
+login input; see [Atuin](modules/atuin.md) for secret handling details.
+
 See [Installation](installation.md) for module selection, package planning,
 shell integration requirements, and applied-module state.

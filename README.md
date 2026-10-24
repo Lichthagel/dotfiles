@@ -139,8 +139,10 @@ The binary embeds `secrets/atuin.env.age` and decrypts it in memory with the
 Rust age library. It expects `ATUIN_USERNAME`, `ATUIN_PASSWORD`, and
 `ATUIN_KEY`; `ATUIN_SYNC_ADDRESS` is optional. `AGE_IDENTITIES` supplies an
 identity-file path, `AGE_IDENTITY` supplies direct key contents, and the
-platform default identity path is used otherwise. No external `age` command or
-age package is required by the installer.
+platform default identity path is used otherwise. Login passes the password via
+stdin and the encryption key via `ATUIN_ENCRYPTION_KEY`, so neither secret is
+added to command-line arguments. No external `age` command or age package is
+required by the installer.
 
 Shell modules load numbered integration drop-ins from their platform-specific
 profile directories: Bash and Zsh use `~/.config/bashrc.d/` and

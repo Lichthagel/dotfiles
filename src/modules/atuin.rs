@@ -142,18 +142,22 @@ pub fn login_atuin(
         .get("ATUIN_KEY")
         .expect("required Atuin key was validated");
 
-    let mut environment = Vec::new();
+    let mut environment = vec![("ATUIN_ENCRYPTION_KEY".into(), key.to_owned())];
     if let Some(address) = sync_address.filter(|address| !address.is_empty()) {
         environment.push(("ATUIN_SYNC_ADDRESS".into(), address.to_owned()));
     }
-    let mut stdin = Zeroizing::new(Vec::with_capacity(password.len() + key.len() + 2));
+    let mut stdin = Zeroizing::new(Vec::with_capacity(password.len() + 1));
     stdin.extend_from_slice(password.as_bytes());
-    stdin.push(b'\n');
-    stdin.extend_from_slice(key.as_bytes());
     stdin.push(b'\n');
     let output = runner.run(
         "atuin",
-        &["login".into(), "-u".into(), username.to_owned()],
+        &[
+            "login".into(),
+            "-u".into(),
+            username.to_owned(),
+            "--password".into(),
+            "-".into(),
+        ],
         &environment,
         Some(&stdin),
     )?;

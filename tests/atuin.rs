@@ -21,7 +21,7 @@ impl HttpClient for NoHttp {
 }
 
 #[test]
-fn atuin_login_sends_only_password_and_key_to_stdin() {
+fn atuin_login_passes_password_on_stdin_and_key_via_environment() {
     let runner = FakeRunner::atuin_not_logged_in();
     let secrets = SecretValues::from_pairs([
         ("ATUIN_USERNAME", "user"),
@@ -34,17 +34,19 @@ fn atuin_login_sends_only_password_and_key_to_stdin() {
 
     let calls = runner.calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].args, ["login", "-u", "user"]);
-    assert_eq!(
-        calls[0].stdin.as_deref(),
-        Some(b"password\nencryption-key\n".as_slice())
-    );
+    assert_eq!(calls[0].args, ["login", "-u", "user", "--password", "-"]);
+    assert_eq!(calls[0].stdin.as_deref(), Some(b"password\n".as_slice()));
     assert_eq!(
         calls[0].env,
-        [("ATUIN_SYNC_ADDRESS".into(), "https://sync.example".into())]
+        [
+            ("ATUIN_ENCRYPTION_KEY".into(), "encryption-key".into()),
+            ("ATUIN_SYNC_ADDRESS".into(), "https://sync.example".into()),
+        ]
     );
-    assert!(!runner.log_contains("password"));
-    assert!(!runner.log_contains("encryption-key"));
+    assert!(!calls[0]
+        .args
+        .iter()
+        .any(|arg| { arg == "password" || arg == "encryption-key" }));
 }
 
 #[test]
@@ -126,4 +128,8 @@ fn failed_atuin_login_returns_setup_error_without_secret_output() {
     assert!(matches!(error, InstallError::Setup(ref message) if message == "Atuin login failed"));
     assert!(!error.to_string().contains("password"));
     assert!(!error.to_string().contains("encryption-key"));
+    assert!(!runner.calls()[0]
+        .args
+        .iter()
+        .any(|arg| arg == "password" || arg == "encryption-key"));
 }
